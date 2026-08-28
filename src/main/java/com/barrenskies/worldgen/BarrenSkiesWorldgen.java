@@ -31,11 +31,13 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 public final class BarrenSkiesWorldgen {
     /**
-     * Vanilla's terrain slide fades everything out between y=240 and y=256 regardless of world height,
-     * so the extra room above 320 is empty and available for the island band.
+     * Terrain from the overworld noise settings stops at Y 320, so everything above that is empty and
+     * available for the island band. The world is deliberately far taller than vanilla to give the islands
+     * room to sit on genuinely different levels. This cannot be a config value: it lives in the dimension
+     * type datapack entry, which is baked at build time.
      */
     public static final int WORLD_MIN_Y = -64;
-    public static final int WORLD_HEIGHT = 512;
+    public static final int WORLD_HEIGHT = 1024;
 
     public static final ResourceKey<DimensionType> DIMENSION_TYPE = ResourceKey.create(Registries.DIMENSION_TYPE, id("barren_skies"));
     public static final ResourceKey<NoiseGeneratorSettings> NOISE_SETTINGS = ResourceKey.create(Registries.NOISE_SETTINGS, id("barren_skies"));

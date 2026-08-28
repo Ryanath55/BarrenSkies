@@ -9,34 +9,39 @@ import net.minecraft.util.Mth;
  * Decides where sky islands sit and what shape they are. Both the terrain and the biomes are read from
  * this one place so the ground a player lands on always matches the biome the game reports.
  *
- * <p>Shape comes from layered fractal noise rather than one smooth falloff: broad relief, ridged detail,
- * carved basins and fine roughness, each scaled by the island's {@link TerrainProfile}. That is what makes
- * the result read as landscape instead of a lump, and it is why a mountain island looks nothing like a
- * plains one.
+ * <p>Islands are carved from a 3D density field rather than drawn as a top and bottom surface. A height
+ * field can only ever produce one ground level per column, which is why earlier versions came out as
+ * pancakes however the noise was tuned. Working in three dimensions gives overhangs, arches, notched
+ * cliffs and detached fragments, because the rock is decided per block rather than per column.
  */
 public final class SkyIslandLayout {
-    /**
-     * Grid pitch for island centres. This and the radius range together set how much sky is land, roughly
-     * {@code occupancy * pi * meanRadius^2 / SPACING^2}. Tuning one without the other once left the sky
-     * about 98% empty, so keep them in step and re-measure.
-     */
-    private static final int SPACING = 560;
-    /** Fraction of grid cells holding an island at density 1.0. */
-    private static final double BASE_OCCUPANCY = 0.55D;
-    private static final int MIN_RADIUS = 190;
-    private static final int MAX_RADIUS = 360;
-    /** Vertical spread of island base heights above the layer floor. */
-    private static final int ALTITUDE_SPREAD = 40;
+    /** How far the 3D noise can push rock beyond the smooth envelope, in blocks. */
+    private static final double SURFACE_BAND = 18.0D;
 
     private final long seed;
-    private final int floorY;
-    private final double density;
+    private final Settings settings;
     private final Map<Long, List<Island>> cellCache = new ConcurrentHashMap<>();
 
-    public SkyIslandLayout(long seed, int floorY, double density) {
+    /**
+     * Tunable shape parameters, all config driven.
+     *
+     * @param bandBottom lowest Y an island may occupy
+     * @param bandTop highest Y an island may occupy
+     * @param density fraction of grid cells holding an island, scaled
+     * @param minRadius smallest island radius in blocks
+     * @param maxRadius largest island radius in blocks
+     * @param spacing grid pitch for island centres; with the radii this sets how much sky is land
+     */
+    public record Settings(int bandBottom, int bandTop, double density, int minRadius, int maxRadius, int spacing) {
+    }
+
+    public SkyIslandLayout(long seed, Settings settings) {
         this.seed = seed;
-        this.floorY = floorY;
-        this.density = density;
+        this.settings = settings;
+    }
+
+    public Settings settings() {
+        return this.settings;
     }
 
     /** One island. {@code biomeSelector} is stable per island so the whole island reads as a single place. */
@@ -48,10 +53,17 @@ public final class SkyIslandLayout {
         }
     }
 
+    /** The smooth envelope of an island at one column, before 3D noise breaks it up. */
+    public record Envelope(int top, int bottom) {
+        public boolean isEmpty() {
+            return this.top < this.bottom;
+        }
+    }
+
     /** The island covering this column, or null for open sky. Nearest wins where islands overlap. */
     public Island islandAt(int blockX, int blockZ) {
-        int cellX = Math.floorDiv(blockX, SPACING);
-        int cellZ = Math.floorDiv(blockZ, SPACING);
+        int cellX = Math.floorDiv(blockX, this.settings.spacing());
+        int cellZ = Math.floorDiv(blockZ, this.settings.spacing());
 
         Island best = null;
         double bestDistance = Double.MAX_VALUE;
@@ -69,11 +81,14 @@ public final class SkyIslandLayout {
         return best;
     }
 
-    /** Top of the island at this column, or MIN_VALUE outside it. */
-    public int surfaceY(Island island, int x, int z, TerrainProfile profile) {
+    /**
+     * The smooth top and bottom of an island at this column. This is only the envelope that the 3D field
+     * is evaluated around; the actual rock surface is decided by {@link #isSolid}.
+     */
+    public Envelope envelope(Island island, int x, int z, TerrainProfile profile) {
         double distance = this.shorelineDistance(island, x, z);
         if (distance >= 1.0D) {
-            return Integer.MIN_VALUE;
+            return new Envelope(Integer.MIN_VALUE, Integer.MAX_VALUE);
         }
 
         // Broad swells across the island: the layer that decides where the high ground is.
@@ -84,34 +99,49 @@ public final class SkyIslandLayout {
         double basins = Math.max(0.0D, this.fbm(307L, x / 150.0D, z / 150.0D, 2, 0.5D)) * profile.basinCarve();
         double rough = this.fbm(409L, x / 34.0D, z / 34.0D, 3, 0.5D) * profile.roughness();
 
-        // Relief flattens towards the rim so the edge stays an edge rather than a ragged slope.
         double inland = Mth.clamp((1.0D - distance) * 2.6D, 0.0D, 1.0D);
         double relief = (macro + ridges - basins + rough) * inland;
-        // A shallow dome so the middle of an island sits a little proud of its shore.
         double dome = Math.cos(distance * Math.PI * 0.5D) * 4.0D;
+        int top = island.deckY() + (int) Math.round(relief + dome);
 
-        return island.deckY() + (int) Math.round(relief + dome);
-    }
-
-    /** Underside of the island, or MIN_VALUE outside it. */
-    public int bottomY(Island island, int x, int z, TerrainProfile profile) {
-        double distance = this.shorelineDistance(island, x, z);
-        if (distance >= 1.0D) {
-            return Integer.MIN_VALUE;
-        }
-
-        // Thickness follows an ellipsoid so the island thins towards its rim, sharpened by the profile so
-        // eroded islands end in cliffs while flat ones taper gently.
         double taper = Math.pow(Math.max(0.0D, 1.0D - Math.pow(distance, profile.edgeExponent())), 0.62D);
-        // Break the underside up so it is not a smooth machined shell.
         double lumps = this.fbm(523L, x / 44.0D, z / 44.0D, 3, 0.55D) * 5.0D
             + this.ridgedFbm(617L, x / 78.0D, z / 78.0D, 2, 0.5D) * 4.0D;
-
         int belly = (int) Math.round(island.thickness() * taper + lumps * taper);
-        int surface = this.surfaceY(island, x, z, profile);
-        int bottom = Math.min(island.deckY() - Math.max(profile.minimumThickness(), belly), surface - profile.minimumThickness());
-        // Never let an underside hang into the range the ground terrain can reach, or islands clip peaks.
-        return Math.max(bottom, this.floorY - 24);
+        int bottom = Math.min(island.deckY() - Math.max(profile.minimumThickness(), belly), top - profile.minimumThickness());
+
+        return new Envelope(top, Math.max(bottom, this.settings.bandBottom() - 40));
+    }
+
+    /**
+     * Whether there is rock at this block. Deep inside the envelope the answer is yes without touching the
+     * noise; only within {@link #SURFACE_BAND} of a surface does the 3D field get evaluated, which is what
+     * keeps this affordable while still producing overhangs and floating shards.
+     */
+    public boolean isSolid(Island island, int x, int y, int z, TerrainProfile profile, Envelope envelope) {
+        if (envelope.isEmpty()) {
+            return false;
+        }
+
+        // Signed distance to the nearest envelope surface: positive inside, negative outside.
+        double signed = y >= envelope.top()
+            ? envelope.top() - y
+            : y <= envelope.bottom() ? y - envelope.bottom() : Math.min(y - envelope.bottom(), envelope.top() - y);
+
+        if (signed > SURFACE_BAND) {
+            return true;
+        }
+        if (signed < -SURFACE_BAND) {
+            return false;
+        }
+
+        // Near a surface the 3D field decides, so rock can bulge outwards into overhangs or be eaten back
+        // into hollows and arches.
+        double detail = this.fbm3D(733L, x / 30.0D, y / 21.0D, z / 30.0D, 3, 0.5D);
+        double veins = this.ridgedFbm3D(839L, x / 52.0D, y / 34.0D, z / 52.0D, 2, 0.5D);
+        double push = (detail * 0.72D + veins * 0.38D) * SURFACE_BAND * profile.overhang();
+
+        return signed + push > 0.0D;
     }
 
     /**
@@ -130,15 +160,21 @@ public final class SkyIslandLayout {
 
     private List<Island> buildCell(int cellX, int cellZ) {
         long cellSeed = mix(this.seed, cellX, cellZ);
-        if (unitFloat(cellSeed) > Math.min(1.0D, BASE_OCCUPANCY * this.density)) {
+        if (unitFloat(cellSeed) > Math.min(1.0D, this.settings.density())) {
             return List.of();
         }
 
-        int radius = MIN_RADIUS + (int) (unitFloat(mix(cellSeed, 1L, 0L)) * (MAX_RADIUS - MIN_RADIUS));
-        int x = cellX * SPACING + SPACING / 2 + (int) (signedFloat(cellSeed, 2L) * SPACING * 0.38D);
-        int z = cellZ * SPACING + SPACING / 2 + (int) (signedFloat(cellSeed, 3L) * SPACING * 0.38D);
-        int deckY = this.floorY + (int) (unitFloat(mix(cellSeed, 4L, 0L)) * ALTITUDE_SPREAD);
-        int thickness = 15 + (int) (unitFloat(mix(cellSeed, 5L, 0L)) * 18.0D);
+        int spacing = this.settings.spacing();
+        int radius = this.settings.minRadius()
+            + (int) (unitFloat(mix(cellSeed, 1L, 0L)) * Math.max(1, this.settings.maxRadius() - this.settings.minRadius()));
+        int x = cellX * spacing + spacing / 2 + (int) (signedFloat(cellSeed, 2L) * spacing * 0.38D);
+        int z = cellZ * spacing + spacing / 2 + (int) (signedFloat(cellSeed, 3L) * spacing * 0.38D);
+
+        // Spread islands through the whole band so they sit on genuinely different levels.
+        int span = Math.max(0, this.settings.bandTop() - this.settings.bandBottom());
+        int deckY = this.settings.bandBottom() + (int) (unitFloat(mix(cellSeed, 4L, 0L)) * span);
+        // Thickness scales with radius so small islands are not slabs and large ones are not wafers.
+        int thickness = (int) (radius * (0.16D + unitFloat(mix(cellSeed, 5L, 0L)) * 0.16D)) + 10;
 
         return List.of(new Island(x, z, radius, deckY, thickness, (int) (cellSeed >>> 24 & 0xFFFF)));
     }
@@ -174,6 +210,35 @@ public final class SkyIslandLayout {
         return sum / total * 2.0D - 1.0D;
     }
 
+    private double fbm3D(long salt, double x, double y, double z, int octaves, double persistence) {
+        double sum = 0.0D;
+        double amplitude = 1.0D;
+        double frequency = 1.0D;
+        double total = 0.0D;
+        for (int i = 0; i < octaves; i++) {
+            sum += this.valueNoise3D(salt + i * 151L, x * frequency, y * frequency, z * frequency) * amplitude;
+            total += amplitude;
+            amplitude *= persistence;
+            frequency *= 2.0D;
+        }
+        return sum / total;
+    }
+
+    private double ridgedFbm3D(long salt, double x, double y, double z, int octaves, double persistence) {
+        double sum = 0.0D;
+        double amplitude = 1.0D;
+        double frequency = 1.0D;
+        double total = 0.0D;
+        for (int i = 0; i < octaves; i++) {
+            double folded = 1.0D - Math.abs(this.valueNoise3D(salt + i * 173L, x * frequency, y * frequency, z * frequency));
+            sum += folded * folded * amplitude;
+            total += amplitude;
+            amplitude *= persistence;
+            frequency *= 2.0D;
+        }
+        return sum / total * 2.0D - 1.0D;
+    }
+
     /** Smooth value noise on a unit lattice, in the range -1..1. */
     private double valueNoise(long salt, double x, double z) {
         int x0 = Mth.floor(x);
@@ -185,6 +250,34 @@ public final class SkyIslandLayout {
         double n01 = signedFloat(mix(this.seed + salt, x0, z0 + 1), 0L);
         double n11 = signedFloat(mix(this.seed + salt, x0 + 1, z0 + 1), 0L);
         return Mth.lerp(tz, Mth.lerp(tx, n00, n10), Mth.lerp(tx, n01, n11));
+    }
+
+    private double valueNoise3D(long salt, double x, double y, double z) {
+        int x0 = Mth.floor(x);
+        int y0 = Mth.floor(y);
+        int z0 = Mth.floor(z);
+        double tx = Mth.smoothstep(x - x0);
+        double ty = Mth.smoothstep(y - y0);
+        double tz = Mth.smoothstep(z - z0);
+
+        double c000 = lattice3D(this.seed + salt, x0, y0, z0);
+        double c100 = lattice3D(this.seed + salt, x0 + 1, y0, z0);
+        double c010 = lattice3D(this.seed + salt, x0, y0 + 1, z0);
+        double c110 = lattice3D(this.seed + salt, x0 + 1, y0 + 1, z0);
+        double c001 = lattice3D(this.seed + salt, x0, y0, z0 + 1);
+        double c101 = lattice3D(this.seed + salt, x0 + 1, y0, z0 + 1);
+        double c011 = lattice3D(this.seed + salt, x0, y0 + 1, z0 + 1);
+        double c111 = lattice3D(this.seed + salt, x0 + 1, y0 + 1, z0 + 1);
+
+        double x00 = Mth.lerp(tx, c000, c100);
+        double x10 = Mth.lerp(tx, c010, c110);
+        double x01 = Mth.lerp(tx, c001, c101);
+        double x11 = Mth.lerp(tx, c011, c111);
+        return Mth.lerp(tz, Mth.lerp(ty, x00, x10), Mth.lerp(ty, x01, x11));
+    }
+
+    private static double lattice3D(long salt, int x, int y, int z) {
+        return signedFloat(mix(mix(salt, x, z), y, 977L), 0L);
     }
 
     private static long mix(long seed, long a, long b) {

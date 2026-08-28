@@ -10,8 +10,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class SkyIslandLayouts {
     private static final Map<String, SkyIslandLayout> CACHE = new ConcurrentHashMap<>();
 
-    public static SkyIslandLayout forSeed(long seed, int floorY, double density) {
-        return CACHE.computeIfAbsent(seed + ":" + floorY + ":" + density, key -> new SkyIslandLayout(seed, floorY, density));
+    public static SkyIslandLayout forSeed(long seed, SkyIslandLayout.Settings settings) {
+        return CACHE.computeIfAbsent(seed + ":" + settings, key -> new SkyIslandLayout(seed, settings));
     }
 
     private SkyIslandLayouts() {

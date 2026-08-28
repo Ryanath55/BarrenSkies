@@ -50,11 +50,23 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final BlockState TERRACOTTA = Blocks.TERRACOTTA.defaultBlockState();
     private static final BlockState SNOW = Blocks.SNOW_BLOCK.defaultBlockState();
 
+    /** How far past the smooth envelope the 3D field is allowed to place or remove rock. */
+    private static final int SURFACE_MARGIN = 16;
+
     private static final net.minecraft.resources.ResourceLocation SKY_ISLAND_RANDOM =
         net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("barrenskies", "sky_islands");
 
     private final Holder<NoiseGeneratorSettings> settings;
-    private final Supplier<Integer> floorY = Suppliers.memoize(BarrenSkiesConfig.SKY_ISLAND_BOTTOM::get);
+    private final Supplier<SkyIslandLayout.Settings> shape = Suppliers.memoize(
+        () -> new SkyIslandLayout.Settings(
+            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
+            Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
+            BarrenSkiesConfig.ISLAND_DENSITY.get() * 0.55D,
+            BarrenSkiesConfig.ISLAND_RADIUS_MIN.get(),
+            Math.max(BarrenSkiesConfig.ISLAND_RADIUS_MIN.get(), BarrenSkiesConfig.ISLAND_RADIUS_MAX.get()),
+            BarrenSkiesConfig.ISLAND_SPACING.get()
+        )
+    );
 
     public SkyIslandChunkGenerator(BiomeSource biomeSource, Holder<NoiseGeneratorSettings> settings) {
         super(biomeSource, settings);
@@ -69,7 +81,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     private SkyIslandLayout layout(RandomState randomState) {
         // RandomState does not expose the level seed, but its positional random factories are derived from it.
         long seed = randomState.getOrCreateRandomFactory(SKY_ISLAND_RANDOM).at(0, 0, 0).nextLong();
-        return SkyIslandLayouts.forSeed(seed, this.floorY.get(), BarrenSkiesConfig.ISLAND_DENSITY.get());
+        return SkyIslandLayouts.forSeed(seed, this.shape.get());
     }
 
     @Override
@@ -80,7 +92,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             return super.createBiomes(randomState, blender, structureManager, chunk);
         }
 
-        int floor = this.floorY.get();
+        int floor = this.shape.get().bandBottom();
         BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
             if (QuartPos.toBlock(quartY) < floor) {
                 return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
@@ -129,15 +141,27 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                     QuartPos.fromBlock(x), QuartPos.fromBlock(island.deckY()), QuartPos.fromBlock(z)
                 );
                 TerrainProfile profile = profileFor(biome);
-                int surface = layout.surfaceY(island, x, z, profile);
-                int bottom = layout.bottomY(island, x, z, profile);
-                if (surface == Integer.MIN_VALUE || bottom >= surface) {
+                SkyIslandLayout.Envelope envelope = layout.envelope(island, x, z, profile);
+                if (envelope.isEmpty()) {
                     continue;
                 }
-                surface = Math.min(surface, ceiling);
-                for (int y = Math.max(bottom, chunk.getMinBuildHeight()); y <= surface; y++) {
+
+                // Scan a margin past the envelope so the 3D field can hang rock below it or raise spurs
+                // above it. Depth is counted down from each run of solid blocks rather than from the
+                // envelope, so the top of an overhang gets its own grass instead of bare stone.
+                int from = Math.max(envelope.bottom() - SURFACE_MARGIN, chunk.getMinBuildHeight());
+                int to = Math.min(envelope.top() + SURFACE_MARGIN, ceiling);
+                int depth = 0;
+                boolean air = true;
+                for (int y = to; y >= from; y--) {
+                    if (!layout.isSolid(island, x, y, z, profile, envelope)) {
+                        air = true;
+                        continue;
+                    }
+                    depth = air ? 0 : depth + 1;
+                    air = false;
                     cursor.set(x, y, z);
-                    chunk.setBlockState(cursor, this.blockFor(biome, surface - y), false);
+                    chunk.setBlockState(cursor, this.blockFor(biome, depth), false);
                 }
             }
         }

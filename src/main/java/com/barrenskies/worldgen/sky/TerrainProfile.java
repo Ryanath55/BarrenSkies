@@ -9,19 +9,21 @@ package com.barrenskies.worldgen.sky;
  * @param basinCarve depth of scooped basins, which is where lakes end up sitting
  * @param roughness fine surface break-up
  * @param edgeExponent how sharply the island tapers to its rim; higher means more cliff-like
+ * @param overhang how far the 3D field may push rock past the smooth envelope; higher means more
+ *                 overhangs, arches and detached shards
  * @param minimumThickness never let the raft get thinner than this, so nothing punches through
  */
 public record TerrainProfile(
-    double macroRelief, double ridgeRelief, double basinCarve, double roughness, double edgeExponent, int minimumThickness
+    double macroRelief, double ridgeRelief, double basinCarve, double roughness, double edgeExponent, double overhang, int minimumThickness
 ) {
     /** Gentle, broad swells. Plains, deserts, savanna. */
-    public static final TerrainProfile FLAT = new TerrainProfile(7.0D, 1.0D, 3.0D, 1.0D, 1.6D, 12);
+    public static final TerrainProfile FLAT = new TerrainProfile(7.0D, 1.0D, 3.0D, 1.0D, 1.6D, 0.70D, 12);
     /** Moderate hills and dips. Forests, taiga, jungle. */
-    public static final TerrainProfile ROLLING = new TerrainProfile(14.0D, 4.0D, 5.0D, 1.8D, 1.8D, 14);
+    public static final TerrainProfile ROLLING = new TerrainProfile(14.0D, 4.0D, 5.0D, 1.8D, 1.8D, 1.05D, 14);
     /** Strong ridges and steep faces. Mountains, peaks, windswept. */
-    public static final TerrainProfile RUGGED = new TerrainProfile(22.0D, 26.0D, 4.0D, 2.5D, 2.4D, 16);
+    public static final TerrainProfile RUGGED = new TerrainProfile(22.0D, 26.0D, 4.0D, 2.5D, 2.4D, 1.65D, 16);
     /** Layered shelves and sharp cut edges. Badlands. */
-    public static final TerrainProfile ERODED = new TerrainProfile(18.0D, 12.0D, 6.0D, 2.0D, 2.6D, 14);
+    public static final TerrainProfile ERODED = new TerrainProfile(18.0D, 12.0D, 6.0D, 2.0D, 2.6D, 1.45D, 14);
     /** Low and pitted, so water pools. Swamps, marshes. */
-    public static final TerrainProfile BASIN = new TerrainProfile(6.0D, 1.0D, 11.0D, 1.4D, 1.4D, 12);
+    public static final TerrainProfile BASIN = new TerrainProfile(6.0D, 1.0D, 11.0D, 1.4D, 1.4D, 0.80D, 12);
 }

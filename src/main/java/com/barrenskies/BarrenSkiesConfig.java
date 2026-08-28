@@ -6,7 +6,11 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec SPEC;
 
     public static final ModConfigSpec.IntValue SKY_ISLAND_BOTTOM;
+    public static final ModConfigSpec.IntValue SKY_ISLAND_TOP;
     public static final ModConfigSpec.DoubleValue ISLAND_DENSITY;
+    public static final ModConfigSpec.IntValue ISLAND_RADIUS_MIN;
+    public static final ModConfigSpec.IntValue ISLAND_RADIUS_MAX;
+    public static final ModConfigSpec.IntValue ISLAND_SPACING;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
     public static final ModConfigSpec.DoubleValue ARID_TEMPERATURE_MIN;
     public static final ModConfigSpec.BooleanValue ARID_REQUIRES_NO_RAIN;
@@ -25,18 +29,53 @@ public final class BarrenSkiesConfig {
 
         SKY_ISLAND_BOTTOM = b
             .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.",
-                "Terrain generates up to Y 320, so keep this above 340 or island undersides will clip tall peaks.")
+                "Terrain generates up to Y 320, so keep this above 360 or island undersides will clip tall peaks.")
             .translation("barrenskies.configuration.skyIslandBottom")
-            .defineInRange("skyIslandBottom", 360, 0, 447);
+            .defineInRange("skyIslandBottom", 380, 0, 950);
+
+        SKY_ISLAND_TOP = b
+            .comment(
+                "Highest Y an island may sit at. Islands are spread evenly between the floor and this,",
+                "so a wide gap gives genuinely layered altitudes and a narrow one puts them all on one plane.",
+                "The world is 1024 blocks tall (Y -64 to 959), so there is room to go high."
+            )
+            .translation("barrenskies.configuration.skyIslandTop")
+            .defineInRange("skyIslandTop", 840, 0, 950);
+
 
         ISLAND_DENSITY = b
             .comment(
-                "How much of the sky is filled with island clusters.",
-                "1.0 is the default archipelago spacing: clusters of 3-6 islands with long empty crossings between them.",
-                "Raise toward 2.0 for a crowded sky, lower toward 0.2 for rare, hard-won landmasses."
+                "Fraction of grid cells that hold an island, before size is taken into account.",
+                "This is a multiplier on a 0.55 base, so 1.0 fills about 55 percent of cells.",
+                "Combine with islandSpacing and the radii for fine control over how much open sky there is."
             )
             .translation("barrenskies.configuration.islandDensity")
             .defineInRange("islandDensity", 1.0D, 0.05D, 3.0D);
+
+        ISLAND_RADIUS_MIN = b
+            .comment("Smallest island radius in blocks. An island is roughly twice this across at its narrowest.")
+            .translation("barrenskies.configuration.islandRadiusMin")
+            .defineInRange("islandRadiusMin", 95, 20, 600);
+
+
+
+        ISLAND_RADIUS_MAX = b
+            .comment("Largest island radius in blocks. Values below the minimum are treated as equal to it.")
+            .translation("barrenskies.configuration.islandRadiusMax")
+            .defineInRange("islandRadiusMax", 180, 20, 600);
+
+
+
+        ISLAND_SPACING = b
+            .comment(
+                "Grid pitch between island centres, in blocks. Lower packs islands closer together.",
+                "Sky coverage is roughly density * pi * meanRadius^2 / spacing^2, so if you change the radii",
+                "and want the same amount of open sky, scale this with them."
+            )
+            .translation("barrenskies.configuration.islandSpacing")
+            .defineInRange("islandSpacing", 300, 60, 4000);
+
+
 
         OCEAN_CONTINENTALNESS_MAX = b
             .comment(
