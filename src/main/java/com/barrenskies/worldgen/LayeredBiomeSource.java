@@ -23,6 +23,7 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
+import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterLists;
 
 /**
  * Splits the overworld climate space by height: ocean, arid and cave biomes below the island band,
@@ -30,14 +31,23 @@ import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
  */
 public class LayeredBiomeSource extends BiomeSource {
     public static final MapCodec<LayeredBiomeSource> CODEC = RecordCodecBuilder.mapCodec(
-        instance -> instance.group(RegistryOps.retrieveGetter(Registries.BIOME)).apply(instance, LayeredBiomeSource::new)
+        instance -> instance.group(
+                RegistryOps.retrieveGetter(Registries.BIOME),
+                // Read the overworld climate space from the registry rather than vanilla's hardcoded preset.
+                // Datapack worldgen mods such as Terralith ship their own copy of this file, so this is what
+                // picks their biomes up.
+                RegistryOps.retrieveElement(MultiNoiseBiomeSourceParameterLists.OVERWORLD)
+            )
+            .apply(instance, LayeredBiomeSource::new)
     );
 
     private final HolderGetter<Biome> biomes;
+    private final Holder<MultiNoiseBiomeSourceParameterList> overworldParameters;
     private final Supplier<Layers> layers = Suppliers.memoize(this::buildLayers);
 
-    public LayeredBiomeSource(HolderGetter<Biome> biomes) {
+    public LayeredBiomeSource(HolderGetter<Biome> biomes, Holder<MultiNoiseBiomeSourceParameterList> overworldParameters) {
         this.biomes = biomes;
+        this.overworldParameters = overworldParameters;
     }
 
     @Override
@@ -64,9 +74,8 @@ public class LayeredBiomeSource extends BiomeSource {
     }
 
     private Layers buildLayers() {
-        List<Pair<Climate.ParameterPoint, Holder<Biome>>> all = new ArrayList<>(
-            new MultiNoiseBiomeSourceParameterList(MultiNoiseBiomeSourceParameterList.Preset.OVERWORLD, this.biomes).parameters().values()
-        );
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> all =
+            new ArrayList<>(this.overworldParameters.value().parameters().values());
         if (BarrenSkiesConfig.INCLUDE_MODDED_BIOMES.get()) {
             all.addAll(ModdedBiomes.collect(this.biomes));
         }
@@ -75,7 +84,9 @@ public class LayeredBiomeSource extends BiomeSource {
         long aridTemperatureMin = Climate.quantizeCoord(BarrenSkiesConfig.ARID_TEMPERATURE_MIN.get().floatValue());
         boolean aridRequiresNoRain = BarrenSkiesConfig.ARID_REQUIRES_NO_RAIN.get();
 
-        // Cave biomes sit at a positive depth; vanilla already routes them underground, so they pass through untouched.
+        // Everything at a positive depth is underground: the cave biomes proper, plus the copy vanilla makes
+        // of each surface biome at depth 1.0 so that deep stone keeps a sensible biome. Both pass through
+        // untouched, which is what keeps layer one vanilla.
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> caves = new ArrayList<>();
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> surface = new ArrayList<>();
         for (Pair<Climate.ParameterPoint, Holder<Biome>> entry : all) {

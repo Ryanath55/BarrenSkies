@@ -102,7 +102,10 @@ public final class BarrenSkiesWorldgen {
 
         LevelStem overworld = new LevelStem(
             dimensionTypes.getOrThrow(DIMENSION_TYPE),
-            new NoiseBasedChunkGenerator(new LayeredBiomeSource(biomes), noiseSettings.getOrThrow(NOISE_SETTINGS))
+            new NoiseBasedChunkGenerator(
+                new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
+                noiseSettings.getOrThrow(NOISE_SETTINGS)
+            )
         );
         LevelStem nether = new LevelStem(
             dimensionTypes.getOrThrow(BuiltinDimensionTypes.NETHER),
