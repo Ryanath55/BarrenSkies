@@ -27,7 +27,7 @@ public final class BarrenSkiesConfig {
             .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.",
                 "Terrain generates up to Y 320, so keep this above 340 or island undersides will clip tall peaks.")
             .translation("barrenskies.configuration.skyIslandBottom")
-            .defineInRange("skyIslandBottom", 352, 0, 447);
+            .defineInRange("skyIslandBottom", 360, 0, 447);
 
         ISLAND_DENSITY = b
             .comment(

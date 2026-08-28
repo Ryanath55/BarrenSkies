@@ -123,14 +123,18 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                     continue;
                 }
 
-                int surface = layout.surfaceY(island, x, z);
-                int bottom = layout.bottomY(island, x, z);
+                // Biomes are filled before terrain, and a sky biome does not vary with height, so the
+                // island biome is available here and is what decides how its terrain is shaped.
+                Holder<Biome> biome = chunk.getNoiseBiome(
+                    QuartPos.fromBlock(x), QuartPos.fromBlock(island.deckY()), QuartPos.fromBlock(z)
+                );
+                TerrainProfile profile = profileFor(biome);
+                int surface = layout.surfaceY(island, x, z, profile);
+                int bottom = layout.bottomY(island, x, z, profile);
                 if (surface == Integer.MIN_VALUE || bottom >= surface) {
                     continue;
                 }
                 surface = Math.min(surface, ceiling);
-
-                Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(surface), QuartPos.fromBlock(z));
                 for (int y = Math.max(bottom, chunk.getMinBuildHeight()); y <= surface; y++) {
                     cursor.set(x, y, z);
                     chunk.setBlockState(cursor, this.blockFor(biome, surface - y), false);
@@ -141,6 +145,22 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /** Surface dressing for the island, chosen from the biome so a desert island is not capped with turf. */
+    private static TerrainProfile profileFor(Holder<Biome> biome) {
+        if (biome.is(BiomeTags.IS_BADLANDS)) {
+            return TerrainProfile.ERODED;
+        }
+        if (biome.is(BiomeTags.IS_MOUNTAIN) || biome.is(BiomeTags.IS_HILL)) {
+            return TerrainProfile.RUGGED;
+        }
+        if (biome.is(BiomeTags.HAS_SWAMP_HUT) || biome.is(BiomeTags.IS_RIVER)) {
+            return TerrainProfile.BASIN;
+        }
+        if (biome.is(BiomeTags.IS_FOREST) || biome.is(BiomeTags.IS_JUNGLE) || biome.is(BiomeTags.IS_TAIGA)) {
+            return TerrainProfile.ROLLING;
+        }
+        return TerrainProfile.FLAT;
+    }
+
     private BlockState blockFor(Holder<Biome> biome, int depthBelowSurface) {
         if (depthBelowSurface > 4) {
             return BODY;

@@ -9,25 +9,24 @@ import net.minecraft.util.Mth;
  * Decides where sky islands sit and what shape they are. Both the terrain and the biomes are read from
  * this one place so the ground a player lands on always matches the biome the game reports.
  *
- * <p>Islands are large rafts on a jittered grid, sized so they cover roughly half the sky at the default
- * density. They are allowed to overlap: where two rafts meet at different heights they fuse into one
- * stepped landmass, which is where the more interesting shapes come from.
+ * <p>Shape comes from layered fractal noise rather than one smooth falloff: broad relief, ridged detail,
+ * carved basins and fine roughness, each scaled by the island's {@link TerrainProfile}. That is what makes
+ * the result read as landscape instead of a lump, and it is why a mountain island looks nothing like a
+ * plains one.
  */
 public final class SkyIslandLayout {
     /**
      * Grid pitch for island centres. This and the radius range together set how much sky is land, roughly
-     * {@code occupancy * pi * meanRadius^2 / SPACING^2}. Tuning one without the other is what previously
-     * left the sky about 98% empty, so keep them in step.
+     * {@code occupancy * pi * meanRadius^2 / SPACING^2}. Tuning one without the other once left the sky
+     * about 98% empty, so keep them in step and re-measure.
      */
-    private static final int SPACING = 520;
-    /** Fraction of grid cells holding an island at density 1.0, giving about half the sky as land. */
-    private static final double BASE_OCCUPANCY = 0.80D;
-    private static final int MIN_RADIUS = 200;
-    private static final int MAX_RADIUS = 380;
-    /** Vertical spread of raft heights above the layer floor. */
-    private static final int ALTITUDE_SPREAD = 48;
-    /** Rolling hill amplitude on top of a raft. */
-    private static final int HILL_HEIGHT = 14;
+    private static final int SPACING = 560;
+    /** Fraction of grid cells holding an island at density 1.0. */
+    private static final double BASE_OCCUPANCY = 0.55D;
+    private static final int MIN_RADIUS = 190;
+    private static final int MAX_RADIUS = 360;
+    /** Vertical spread of island base heights above the layer floor. */
+    private static final int ALTITUDE_SPREAD = 40;
 
     private final long seed;
     private final int floorY;
@@ -40,7 +39,7 @@ public final class SkyIslandLayout {
         this.density = density;
     }
 
-    /** One raft. {@code biomeSelector} is stable per island so the whole raft reads as a single place. */
+    /** One island. {@code biomeSelector} is stable per island so the whole island reads as a single place. */
     public record Island(int centreX, int centreZ, int radius, int deckY, int thickness, int biomeSelector) {
         public double normalisedDistance(int x, int z) {
             double dx = (double) (x - this.centreX) / this.radius;
@@ -49,7 +48,7 @@ public final class SkyIslandLayout {
         }
     }
 
-    /** The island covering this column, or null for open sky. Nearest wins where rafts overlap. */
+    /** The island covering this column, or null for open sky. Nearest wins where islands overlap. */
     public Island islandAt(int blockX, int blockZ) {
         int cellX = Math.floorDiv(blockX, SPACING);
         int cellZ = Math.floorDiv(blockZ, SPACING);
@@ -59,7 +58,7 @@ public final class SkyIslandLayout {
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 for (Island island : this.cell(cellX + dx, cellZ + dz)) {
-                    double distance = this.perturbedDistance(island, blockX, blockZ);
+                    double distance = this.shorelineDistance(island, blockX, blockZ);
                     if (distance < 1.0D && distance < bestDistance) {
                         bestDistance = distance;
                         best = island;
@@ -70,31 +69,58 @@ public final class SkyIslandLayout {
         return best;
     }
 
-    /** Top of the raft at this column: a flat deck carrying rolling hills, or MIN_VALUE outside it. */
-    public int surfaceY(Island island, int x, int z) {
-        double distance = this.perturbedDistance(island, x, z);
+    /** Top of the island at this column, or MIN_VALUE outside it. */
+    public int surfaceY(Island island, int x, int z, TerrainProfile profile) {
+        double distance = this.shorelineDistance(island, x, z);
         if (distance >= 1.0D) {
             return Integer.MIN_VALUE;
         }
-        // Hills fade towards the rim so the edge stays a clean raft edge rather than a ragged slope.
-        double rimFade = Mth.clamp((1.0D - distance) * 3.0D, 0.0D, 1.0D);
-        double hills = (this.noise(x, z, 37L) * 0.7D + this.noise(x * 2, z * 2, 53L) * 0.3D) * HILL_HEIGHT * rimFade;
-        return island.deckY() + (int) Math.round(hills);
+
+        // Broad swells across the island: the layer that decides where the high ground is.
+        double macro = this.fbm(101L, x / 190.0D, z / 190.0D, 4, 0.5D) * profile.macroRelief();
+        // Ridged noise stacks into ridgelines and peaks rather than rounded bumps.
+        double ridges = this.ridgedFbm(211L, x / 130.0D, z / 130.0D, 4, 0.55D) * profile.ridgeRelief();
+        // Basins only ever subtract, scooping hollows that collect water.
+        double basins = Math.max(0.0D, this.fbm(307L, x / 150.0D, z / 150.0D, 2, 0.5D)) * profile.basinCarve();
+        double rough = this.fbm(409L, x / 34.0D, z / 34.0D, 3, 0.5D) * profile.roughness();
+
+        // Relief flattens towards the rim so the edge stays an edge rather than a ragged slope.
+        double inland = Mth.clamp((1.0D - distance) * 2.6D, 0.0D, 1.0D);
+        double relief = (macro + ridges - basins + rough) * inland;
+        // A shallow dome so the middle of an island sits a little proud of its shore.
+        double dome = Math.cos(distance * Math.PI * 0.5D) * 4.0D;
+
+        return island.deckY() + (int) Math.round(relief + dome);
     }
 
-    /** Underside of the raft: shallow and gently rounded, or MIN_VALUE outside it. */
-    public int bottomY(Island island, int x, int z) {
-        double distance = this.perturbedDistance(island, x, z);
+    /** Underside of the island, or MIN_VALUE outside it. */
+    public int bottomY(Island island, int x, int z, TerrainProfile profile) {
+        double distance = this.shorelineDistance(island, x, z);
         if (distance >= 1.0D) {
             return Integer.MIN_VALUE;
         }
-        double belly = island.thickness() * Math.sqrt(Math.max(0.0D, 1.0D - distance * distance));
-        return island.deckY() - (int) Math.round(belly) - 1;
+
+        // Thickness follows an ellipsoid so the island thins towards its rim, sharpened by the profile so
+        // eroded islands end in cliffs while flat ones taper gently.
+        double taper = Math.pow(Math.max(0.0D, 1.0D - Math.pow(distance, profile.edgeExponent())), 0.62D);
+        // Break the underside up so it is not a smooth machined shell.
+        double lumps = this.fbm(523L, x / 44.0D, z / 44.0D, 3, 0.55D) * 5.0D
+            + this.ridgedFbm(617L, x / 78.0D, z / 78.0D, 2, 0.5D) * 4.0D;
+
+        int belly = (int) Math.round(island.thickness() * taper + lumps * taper);
+        int surface = this.surfaceY(island, x, z, profile);
+        int bottom = Math.min(island.deckY() - Math.max(profile.minimumThickness(), belly), surface - profile.minimumThickness());
+        // Never let an underside hang into the range the ground terrain can reach, or islands clip peaks.
+        return Math.max(bottom, this.floorY - 24);
     }
 
-    /** Distance from the centre with the rim pushed in and out, so rafts are not perfect discs. */
-    private double perturbedDistance(Island island, int x, int z) {
-        double wobble = this.noise(x, z, 13L) * 0.16D + this.noise(x * 3, z * 3, 29L) * 0.06D;
+    /**
+     * Distance from the centre with the outline pushed in and out by noise. Layering noise here is what
+     * stops islands reading as circles, which no amount of surface detail can hide.
+     */
+    private double shorelineDistance(Island island, int x, int z) {
+        double wobble = this.fbm(29L, x / 130.0D, z / 130.0D, 3, 0.5D) * 0.24D
+            + this.fbm(37L, x / 46.0D, z / 46.0D, 2, 0.5D) * 0.07D;
         return island.normalisedDistance(x, z) - wobble;
     }
 
@@ -112,17 +138,48 @@ public final class SkyIslandLayout {
         int x = cellX * SPACING + SPACING / 2 + (int) (signedFloat(cellSeed, 2L) * SPACING * 0.38D);
         int z = cellZ * SPACING + SPACING / 2 + (int) (signedFloat(cellSeed, 3L) * SPACING * 0.38D);
         int deckY = this.floorY + (int) (unitFloat(mix(cellSeed, 4L, 0L)) * ALTITUDE_SPREAD);
-        int thickness = 15 + (int) (unitFloat(mix(cellSeed, 5L, 0L)) * 15.0D);
+        int thickness = 15 + (int) (unitFloat(mix(cellSeed, 5L, 0L)) * 18.0D);
 
         return List.of(new Island(x, z, radius, deckY, thickness, (int) (cellSeed >>> 24 & 0xFFFF)));
     }
 
-    /** Cheap value noise in the range -1..1, continuous enough for hills and rim wobble. */
-    private double noise(int x, int z, long salt) {
-        int x0 = Math.floorDiv(x, 32);
-        int z0 = Math.floorDiv(z, 32);
-        double tx = Mth.smoothstep((x - x0 * 32) / 32.0D);
-        double tz = Mth.smoothstep((z - z0 * 32) / 32.0D);
+    /** Fractal brownian motion: several octaves of value noise, roughly -1..1. */
+    private double fbm(long salt, double x, double z, int octaves, double persistence) {
+        double sum = 0.0D;
+        double amplitude = 1.0D;
+        double frequency = 1.0D;
+        double total = 0.0D;
+        for (int i = 0; i < octaves; i++) {
+            sum += this.valueNoise(salt + i * 131L, x * frequency, z * frequency) * amplitude;
+            total += amplitude;
+            amplitude *= persistence;
+            frequency *= 2.0D;
+        }
+        return sum / total;
+    }
+
+    /** Ridged fractal noise: folds each octave about zero so peaks form creases rather than bumps. */
+    private double ridgedFbm(long salt, double x, double z, int octaves, double persistence) {
+        double sum = 0.0D;
+        double amplitude = 1.0D;
+        double frequency = 1.0D;
+        double total = 0.0D;
+        for (int i = 0; i < octaves; i++) {
+            double folded = 1.0D - Math.abs(this.valueNoise(salt + i * 197L, x * frequency, z * frequency));
+            sum += folded * folded * amplitude;
+            total += amplitude;
+            amplitude *= persistence;
+            frequency *= 2.0D;
+        }
+        return sum / total * 2.0D - 1.0D;
+    }
+
+    /** Smooth value noise on a unit lattice, in the range -1..1. */
+    private double valueNoise(long salt, double x, double z) {
+        int x0 = Mth.floor(x);
+        int z0 = Mth.floor(z);
+        double tx = Mth.smoothstep(x - x0);
+        double tz = Mth.smoothstep(z - z0);
         double n00 = signedFloat(mix(this.seed + salt, x0, z0), 0L);
         double n10 = signedFloat(mix(this.seed + salt, x0 + 1, z0), 0L);
         double n01 = signedFloat(mix(this.seed + salt, x0, z0 + 1), 0L);
