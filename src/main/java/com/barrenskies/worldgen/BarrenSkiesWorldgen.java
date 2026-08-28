@@ -51,14 +51,19 @@ public final class BarrenSkiesWorldgen {
         Registries.CHUNK_GENERATOR, BarrenSkies.MOD_ID
     );
 
+    private static final DeferredRegister<MapCodec<? extends net.minecraft.world.level.levelgen.DensityFunction>> DENSITY_FUNCTIONS =
+        DeferredRegister.create(Registries.DENSITY_FUNCTION_TYPE, BarrenSkies.MOD_ID);
+
     static {
         BIOME_SOURCES.register("layered", () -> LayeredBiomeSource.CODEC);
         CHUNK_GENERATORS.register("sky_islands", () -> SkyIslandChunkGenerator.CODEC);
+        DENSITY_FUNCTIONS.register("sky_islands", () -> com.barrenskies.worldgen.sky.SkyIslandDensityFunction.CODEC_INSTANCE);
     }
 
     public static void register(IEventBus modBus) {
         BIOME_SOURCES.register(modBus);
         CHUNK_GENERATORS.register(modBus);
+        DENSITY_FUNCTIONS.register(modBus);
     }
 
     public static void bootstrapDimensionTypes(BootstrapContext<DimensionType> context) {
@@ -117,7 +122,8 @@ public final class BarrenSkiesWorldgen {
             // referenced density functions left the ground disagreeing with the biome chosen for it.
             new SkyIslandChunkGenerator(
                 new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
-                noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD)
+                noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD),
+                context.lookup(Registries.NOISE).getOrThrow(net.minecraft.world.level.levelgen.Noises.AQUIFER_BARRIER)
             )
         );
         LevelStem nether = new LevelStem(

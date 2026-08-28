@@ -1,6 +1,7 @@
 package com.barrenskies.worldgen.sky;
 
 import com.barrenskies.BarrenSkiesConfig;
+import com.barrenskies.worldgen.BarrenSkiesWorldgen;
 import com.barrenskies.worldgen.LayeredBiomeSource;
 import com.google.common.base.Suppliers;
 import com.mojang.serialization.MapCodec;
@@ -8,77 +9,206 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.tags.BiomeTags;
+import net.minecraft.core.QuartPos;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.levelgen.NoiseRouter;
+import net.minecraft.world.level.levelgen.NoiseSettings;
+import net.minecraft.world.level.levelgen.Noises;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
-import net.minecraft.world.level.StructureManager;
-import net.minecraft.core.QuartPos;
-import net.minecraft.util.Mth;
+import net.minecraft.world.level.levelgen.synth.NormalNoise;
 
 /**
- * Generates the barren surface exactly as the underlying noise settings describe, then adds the sky
- * island layer above it.
+ * Generates the barren surface from the world's own noise settings and adds the sky islands into the same
+ * density pipeline.
  *
- * <p>The islands are added after the base terrain rather than folded into its density functions. That
- * keeps the ground compatible with whichever terrain mod supplies the overworld's noise settings.
+ * <p>The islands are folded into the noise router rather than stamped on afterwards, so surface rules,
+ * carvers, heightmaps and structure placement all see island rock as terrain. The router is wrapped rather
+ * than replaced, so whichever mod supplies the overworld shaping still shapes the ground underneath.
  */
 public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     public static final MapCodec<SkyIslandChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(
         instance -> instance.group(
                 BiomeSource.CODEC.fieldOf("biome_source").forGetter(generator -> generator.getBiomeSource()),
-                NoiseGeneratorSettings.CODEC.fieldOf("settings").forGetter(generator -> generator.settings)
+                NoiseGeneratorSettings.CODEC.fieldOf("settings").forGetter(generator -> generator.baseSettings),
+                // A registered noise, retrieved so it carries its key. The router seeds noise by key, and
+                // the biome pass looks the same one up from the world, which is how both ends agree on a
+                // seed without one of them inventing its own.
+                RegistryOps.retrieveElement(Noises.AQUIFER_BARRIER)
             )
             .apply(instance, SkyIslandChunkGenerator::new)
     );
 
-    private static final BlockState BODY = Blocks.STONE.defaultBlockState();
-    private static final BlockState SOIL = Blocks.DIRT.defaultBlockState();
-    private static final BlockState TURF = Blocks.GRASS_BLOCK.defaultBlockState();
-    private static final BlockState SAND = Blocks.SAND.defaultBlockState();
-    private static final BlockState SANDSTONE = Blocks.SANDSTONE.defaultBlockState();
-    private static final BlockState RED_SAND = Blocks.RED_SAND.defaultBlockState();
-    private static final BlockState TERRACOTTA = Blocks.TERRACOTTA.defaultBlockState();
-    private static final BlockState SNOW = Blocks.SNOW_BLOCK.defaultBlockState();
+    /**
+     * A holder that reports the world noise settings with the islands folded in, but only works them out
+     * when first asked. Data generation constructs the generator while the underlying settings are still
+     * unbound, so the wrapping cannot happen in the constructor.
+     */
+    private record LazySettings(Holder<NoiseGeneratorSettings> base, Holder<NormalNoise.NoiseParameters> seedNoise, Supplier<NoiseGeneratorSettings> wrapped)
+        implements Holder<NoiseGeneratorSettings> {
+        LazySettings(Holder<NoiseGeneratorSettings> base, Holder<NormalNoise.NoiseParameters> seedNoise) {
+            this(base, seedNoise, Suppliers.memoize(() -> withIslands(base, seedNoise)));
+        }
 
-    /** How far past the smooth envelope the 3D field is allowed to place or remove rock. */
-    private static final int SURFACE_MARGIN = 16;
+        @Override
+        public NoiseGeneratorSettings value() {
+            return this.wrapped.get();
+        }
 
-    /** How far above and below its deck an island claims the biome, beyond which the sky reads as ground. */
-    private static final int ISLAND_BIOME_REACH = 110;
+        @Override
+        public boolean isBound() {
+            return this.base.isBound();
+        }
+
+        @Override
+        public boolean is(net.minecraft.resources.ResourceLocation location) {
+            return this.base.is(location);
+        }
+
+        @Override
+        public boolean is(net.minecraft.resources.ResourceKey<NoiseGeneratorSettings> key) {
+            return this.base.is(key);
+        }
+
+        @Override
+        public boolean is(java.util.function.Predicate<net.minecraft.resources.ResourceKey<NoiseGeneratorSettings>> predicate) {
+            return this.base.is(predicate);
+        }
+
+        @Override
+        public boolean is(net.minecraft.tags.TagKey<NoiseGeneratorSettings> tag) {
+            return this.base.is(tag);
+        }
+
+        @Override
+        public boolean is(Holder<NoiseGeneratorSettings> holder) {
+            return this.base.is(holder);
+        }
+
+        @Override
+        public java.util.stream.Stream<net.minecraft.tags.TagKey<NoiseGeneratorSettings>> tags() {
+            return this.base.tags();
+        }
+
+        @Override
+        public com.mojang.datafixers.util.Either<net.minecraft.resources.ResourceKey<NoiseGeneratorSettings>, NoiseGeneratorSettings> unwrap() {
+            return this.base.unwrap();
+        }
+
+        @Override
+        public java.util.Optional<net.minecraft.resources.ResourceKey<NoiseGeneratorSettings>> unwrapKey() {
+            return this.base.unwrapKey();
+        }
+
+        @Override
+        public Holder.Kind kind() {
+            return this.base.kind();
+        }
+
+        @Override
+        public boolean canSerializeIn(net.minecraft.core.HolderOwner<NoiseGeneratorSettings> owner) {
+            return this.base.canSerializeIn(owner);
+        }
+    }
 
     /** Fraction of the temperature-sorted pool an island may vary within, for local variety. */
     private static final double BIOME_TEMPERATURE_WINDOW = 0.18D;
 
-    private static final net.minecraft.resources.ResourceLocation SKY_ISLAND_RANDOM =
-        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("barrenskies", "sky_islands");
+    /** Slack around an island's envelope within which a column still counts as that island's biome. */
+    private static final int BIOME_MARGIN = 24;
 
-    private final Holder<NoiseGeneratorSettings> settings;
-    private final Supplier<SkyIslandLayout.Settings> shape = Suppliers.memoize(
-        () -> new SkyIslandLayout.Settings(
+    private final Holder<NoiseGeneratorSettings> baseSettings;
+    private final Supplier<SkyIslandLayout.Settings> shape = Suppliers.memoize(SkyIslandChunkGenerator::readShape);
+
+    public SkyIslandChunkGenerator(
+        BiomeSource biomeSource, Holder<NoiseGeneratorSettings> settings, Holder<NormalNoise.NoiseParameters> seedNoise
+    ) {
+        // Wrapped lazily: at data generation time this holder is not yet bound, and dereferencing it there
+        // fails. Everything except the value itself is delegated, so identity and serialisation are unchanged.
+        super(biomeSource, new LazySettings(settings, seedNoise));
+        this.baseSettings = settings;
+    }
+
+    private static SkyIslandLayout.Settings readShape() {
+        return new SkyIslandLayout.Settings(
             BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
             Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
             BarrenSkiesConfig.ISLAND_DENSITY.get() * 0.55D,
             BarrenSkiesConfig.ISLAND_RADIUS_MIN.get(),
             Math.max(BarrenSkiesConfig.ISLAND_RADIUS_MIN.get(), BarrenSkiesConfig.ISLAND_RADIUS_MAX.get()),
             BarrenSkiesConfig.ISLAND_SPACING.get()
-        )
-    );
+        );
+    }
 
-    public SkyIslandChunkGenerator(BiomeSource biomeSource, Holder<NoiseGeneratorSettings> settings) {
-        super(biomeSource, settings);
-        this.settings = settings;
+    /**
+     * Rebuilds the world's noise settings with the islands added and room above for them to sit in.
+     *
+     * <p>Both the final density and the density used for heightmaps are combined with the island field, so
+     * island rock is solid ground and is also what a heightmap query finds. Every other part of the router
+     * is passed through untouched, which is what preserves the ground a terrain mod produces.
+     */
+    private static NoiseGeneratorSettings withIslands(
+        Holder<NoiseGeneratorSettings> base, Holder<NormalNoise.NoiseParameters> seedNoise
+    ) {
+        NoiseGeneratorSettings settings = base.value();
+        NoiseRouter router = settings.noiseRouter();
+
+        // The noise here carries nothing but the world seed: it is seeded when the router is built, and
+        // sampling it is the only way a seed can reach a density function.
+        DensityFunction islands = new SkyIslandDensityFunction(
+            new DensityFunction.NoiseHolder(seedNoise, null),
+            readShape(),
+            router.finalDensity(),
+            BarrenSkiesConfig.WORLD_TERRAIN_INFLUENCE.get()
+        );
+
+        NoiseRouter withIslands = new NoiseRouter(
+            router.barrierNoise(),
+            router.fluidLevelFloodednessNoise(),
+            router.fluidLevelSpreadNoise(),
+            router.lavaNoise(),
+            router.temperature(),
+            router.vegetation(),
+            router.continents(),
+            router.erosion(),
+            router.depth(),
+            router.ridges(),
+            DensityFunctions.max(router.initialDensityWithoutJaggedness(), islands),
+            DensityFunctions.max(router.finalDensity(), islands),
+            router.veinToggle(),
+            router.veinRidged(),
+            router.veinGap()
+        );
+
+        // A finer vertical cell than vanilla's, so island detail survives the interpolation the noise
+        // pipeline applies between cell corners.
+        NoiseSettings noise = NoiseSettings.create(BarrenSkiesWorldgen.WORLD_MIN_Y, BarrenSkiesWorldgen.WORLD_HEIGHT, 1, 1);
+
+        return new NoiseGeneratorSettings(
+            noise,
+            settings.defaultBlock(),
+            settings.defaultFluid(),
+            withIslands,
+            settings.surfaceRule(),
+            settings.spawnTarget(),
+            settings.seaLevel(),
+            settings.disableMobGeneration(),
+            settings.aquifersEnabled(),
+            settings.oreVeinsEnabled(),
+            settings.useLegacyRandomSource()
+        );
     }
 
     @Override
@@ -86,23 +216,18 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         return CODEC;
     }
 
-    private SkyIslandLayout layout(RandomState randomState) {
-        // RandomState does not expose the level seed, but its positional random factories are derived from it.
-        long seed = randomState.getOrCreateRandomFactory(SKY_ISLAND_RANDOM).at(0, 0, 0).nextLong();
-        return SkyIslandLayouts.forSeed(seed, this.shape.get());
-    }
-
     @Override
     public CompletableFuture<ChunkAccess> createBiomes(RandomState randomState, Blender blender, StructureManager structureManager, ChunkAccess chunk) {
-        SkyIslandLayout layout = this.layout(randomState);
         List<Holder<Biome>> skyBiomes = this.getBiomeSource() instanceof LayeredBiomeSource layered ? layered.skyBiomes() : List.of();
         if (skyBiomes.isEmpty()) {
             return super.createBiomes(randomState, blender, structureManager, chunk);
         }
 
-        int floor = this.shape.get().bandBottom();
-        // A height safely inside the surface pool, used to read what the ground below reports.
+        SkyIslandLayout.Settings shape = this.shape.get();
+        SkyIslandLayout layout = SkyIslandLayouts.forSeed(SkyIslandDensityFunction.seedOf(randomState.getOrCreateNoise(Noises.AQUIFER_BARRIER)), shape);
+        int floor = shape.bandBottom();
         int groundQuartY = QuartPos.fromBlock(floor - 64);
+
         BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
             int y = QuartPos.toBlock(quartY);
             if (y < floor) {
@@ -116,15 +241,14 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                 return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
 
-            // Work out the island biome first, since it decides the terrain profile, then use that profile
-            // to find where the rock actually is. Guessing a fixed reach instead reported a sky biome over
-            // open air, and reported the ground biome on island rock that hung far below its deck.
-            Holder<Biome> islandBiome = skyBiomes.get(this.skyBiomeIndex(column, skyBiomes.size(), sampler));
-            SkyIslandLayout.Envelope envelope = layout.envelope(column, x, z, profileFor(islandBiome));
-            if (envelope.isEmpty() || y < envelope.bottom() - SURFACE_MARGIN * 2 || y > envelope.top() + SURFACE_MARGIN) {
+            // An island decides its own shape, so the envelope is available without knowing the biome first.
+            TerrainProfile profile = TerrainProfile.forIsland(column.island().biomeSelector());
+            SkyIslandLayout.Envelope envelope = layout.envelope(column, x, z, profile);
+            if (envelope.isEmpty() || y < envelope.bottom() - BIOME_MARGIN || y > envelope.top() + BIOME_MARGIN) {
+                // Open sky reports the barren ground below rather than naming a biome for empty air.
                 return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
-            return islandBiome;
+            return skyBiomes.get(this.skyBiomeIndex(column, skyBiomes.size(), sampler));
         };
 
         return CompletableFuture.supplyAsync(
@@ -136,70 +260,6 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         );
     }
 
-    @Override
-    public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState, StructureManager structureManager, ChunkAccess chunk) {
-        return super.fillFromNoise(blender, randomState, structureManager, chunk)
-            .thenApply(filled -> this.addIslands(filled, randomState));
-    }
-
-    private ChunkAccess addIslands(ChunkAccess chunk, RandomState randomState) {
-        SkyIslandLayout layout = this.layout(randomState);
-        // The router belongs to whichever mod supplies the overworld noise settings, so with a terrain
-        // mod installed the islands are shaped by its density functions rather than by our own noise.
-        double influence = BarrenSkiesConfig.WORLD_TERRAIN_INFLUENCE.get();
-        // One sampler per chunk, sized to the sky band. The router is read on a coarse lattice rather
-        // than per block, which is how vanilla evaluates its own density functions.
-        TerrainSampler terrain = influence <= 0.0D
-            ? TerrainSampler.NONE
-            : new CoarseTerrainSampler(randomState.router().finalDensity(), influence);
-        int minX = chunk.getPos().getMinBlockX();
-        int minZ = chunk.getPos().getMinBlockZ();
-        int ceiling = chunk.getMaxBuildHeight() - 1;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-
-        for (int dx = 0; dx < 16; dx++) {
-            for (int dz = 0; dz < 16; dz++) {
-                int x = minX + dx;
-                int z = minZ + dz;
-                SkyIslandLayout.Column column = layout.columnAt(x, z);
-                if (column == null) {
-                    continue;
-                }
-
-                // Biomes are filled before terrain, and a sky biome does not vary with height, so the
-                // island biome is available here and is what decides how its terrain is shaped.
-                Holder<Biome> biome = chunk.getNoiseBiome(
-                    QuartPos.fromBlock(x), QuartPos.fromBlock(column.deckY()), QuartPos.fromBlock(z)
-                );
-                TerrainProfile profile = profileFor(biome);
-                SkyIslandLayout.Envelope envelope = layout.envelope(column, x, z, profile);
-                if (envelope.isEmpty()) {
-                    continue;
-                }
-
-                // Scan a margin past the envelope so the 3D field can hang rock below it or raise spurs
-                // above it. Depth is counted down from each run of solid blocks rather than from the
-                // envelope, so the top of an overhang gets its own grass instead of bare stone.
-                int from = Math.max(envelope.bottom() - SURFACE_MARGIN * 2, chunk.getMinBuildHeight());
-                int to = Math.min(envelope.top() + SURFACE_MARGIN, ceiling);
-                int depth = 0;
-                boolean air = true;
-                for (int y = to; y >= from; y--) {
-                    if (!layout.isSolid(column, x, y, z, profile, envelope, terrain)) {
-                        air = true;
-                        continue;
-                    }
-                    depth = air ? 0 : depth + 1;
-                    air = false;
-                    cursor.set(x, y, z);
-                    chunk.setBlockState(cursor, this.blockFor(biome, depth), false);
-                }
-            }
-        }
-        return chunk;
-    }
-
-    /** Surface dressing for the island, chosen from the biome so a desert island is not capped with turf. */
     /**
      * Picks this island's biome from the sky pool, which is sorted cold to warm.
      *
@@ -218,38 +278,5 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         double window = Math.max(1.0D, count * BIOME_TEMPERATURE_WINDOW);
         double jitter = (Math.floorMod(island.biomeSelector() * 2654435761L, 1024L) / 1023.0D - 0.5D) * window;
         return (int) Mth.clamp(Math.round(temperature * (count - 1) + jitter), 0L, count - 1L);
-    }
-
-    /** How rugged this island is, so a mountain island is not shaped like a plains one. */
-    private static TerrainProfile profileFor(Holder<Biome> biome) {
-        if (biome.is(BiomeTags.IS_BADLANDS)) {
-            return TerrainProfile.ERODED;
-        }
-        if (biome.is(BiomeTags.IS_MOUNTAIN) || biome.is(BiomeTags.IS_HILL)) {
-            return TerrainProfile.RUGGED;
-        }
-        if (biome.is(BiomeTags.HAS_SWAMP_HUT) || biome.is(BiomeTags.IS_RIVER)) {
-            return TerrainProfile.BASIN;
-        }
-        if (biome.is(BiomeTags.IS_FOREST) || biome.is(BiomeTags.IS_JUNGLE) || biome.is(BiomeTags.IS_TAIGA)) {
-            return TerrainProfile.ROLLING;
-        }
-        return TerrainProfile.FLAT;
-    }
-
-    private BlockState blockFor(Holder<Biome> biome, int depthBelowSurface) {
-        if (depthBelowSurface > 4) {
-            return BODY;
-        }
-        if (biome.is(BiomeTags.IS_BADLANDS)) {
-            return depthBelowSurface == 0 ? RED_SAND : TERRACOTTA;
-        }
-        if (biome.value().getBaseTemperature() >= 1.5F && !biome.value().hasPrecipitation()) {
-            return depthBelowSurface == 0 ? SAND : SANDSTONE;
-        }
-        if (biome.value().coldEnoughToSnow(BlockPos.ZERO)) {
-            return depthBelowSurface == 0 ? SNOW : SOIL;
-        }
-        return depthBelowSurface == 0 ? TURF : SOIL;
     }
 }

@@ -82,9 +82,10 @@ public final class BarrenSkiesConfig {
             .comment(
                 "How strongly the world own terrain noise shapes the islands.",
                 "Islands read density from the same noise router that builds the ground, sampled from a distant",
-                "place and lifted into the sky, so with a terrain mod installed they inherit its character.",
-                "This costs generation time, and a heavy terrain mod costs more. Set to 0 to skip it entirely",
-                "and fall back to the built-in island noise, which generates noticeably faster."
+                "place at normal ground height and lifted into the sky, so with a terrain mod installed they",
+                "inherit its character rather than looking like noise of our own.",
+                "This costs generation time, and a heavy terrain mod costs more. Set to 0 to skip it and fall",
+                "back to the built-in island shaping, which generates noticeably faster."
             )
             .translation("barrenskies.configuration.worldTerrainInfluence")
             .defineInRange("worldTerrainInfluence", 1.0D, 0.0D, 2.0D);

@@ -30,4 +30,17 @@ public record TerrainProfile(
     public static final TerrainProfile ERODED = new TerrainProfile(18.0D, 12.0D, 6.0D, 2.0D, 2.6D, 1.45D, 1.1D, 8.5D, 14);
     /** Low and pitted, so water pools. Swamps, marshes. */
     public static final TerrainProfile BASIN = new TerrainProfile(6.0D, 1.0D, 11.0D, 1.4D, 1.4D, 0.80D, 0.6D, 2.0D, 12);
+
+    private static final TerrainProfile[] BY_ISLAND = {FLAT, ROLLING, RUGGED, RUGGED, ERODED, BASIN, ROLLING, FLAT};
+
+    /**
+     * The profile for an island, taken from the island itself rather than from its biome.
+     *
+     * <p>Deriving it from the biome made shape depend on biome and biome depend on shape, which cannot be
+     * resolved inside a density function. Choosing here breaks that loop, and the biome is then picked to
+     * suit the island afterwards.
+     */
+    public static TerrainProfile forIsland(int biomeSelector) {
+        return BY_ISLAND[Math.floorMod(biomeSelector * 31 + 7, BY_ISLAND.length)];
+    }
 }

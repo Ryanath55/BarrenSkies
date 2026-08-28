@@ -187,8 +187,17 @@ public final class SkyIslandLayout {
      * while still producing overhangs, notches and floating shards.
      */
     public boolean isSolid(Column column, int x, int y, int z, TerrainProfile profile, Envelope envelope, TerrainSampler terrain) {
+        return this.density(column, x, y, z, profile, envelope, terrain) > 0.0D;
+    }
+
+    /**
+     * Signed density at this block: positive is rock, negative is air, and the magnitude is roughly how
+     * far inside or outside the surface it lies. Returned as a field rather than a yes or no so it can be
+     * fed into the world density functions, where the game interpolates it the way it does its own terrain.
+     */
+    public double density(Column column, int x, int y, int z, TerrainProfile profile, Envelope envelope, TerrainSampler terrain) {
         if (envelope.isEmpty()) {
-            return false;
+            return -1.0D;
         }
 
         Island island = column.island();
@@ -201,11 +210,12 @@ public final class SkyIslandLayout {
         // proportionally deep band to be chewed into rather than a fixed sliver.
         double thickness = envelope.top() - envelope.bottom();
         double band = Mth.clamp(thickness * 0.55D, 10.0D, 46.0D) * (underside ? 1.4D : 1.0D);
+        // Well inside or well outside, the answer is settled without paying for the noise.
         if (signed > band) {
-            return true;
+            return 1.0D;
         }
         if (signed < -band) {
-            return false;
+            return -1.0D;
         }
 
         double lifted = terrain.density(
@@ -220,7 +230,8 @@ public final class SkyIslandLayout {
         double edge = 1.0D + Math.max(0.0D, 1.0D - envelope.landness() * 3.0D) * 0.9D;
         double push = (detail * 0.72D + veins * 0.38D) * band * profile.overhang() * edge * (underside ? 1.35D : 1.0D);
 
-        return signed + push + borrowed > 0.0D;
+        // Normalised by the band so the result sits in a range the density pipeline can interpolate.
+        return (signed + push + borrowed) / band;
     }
 
     private List<Island> cell(int cellX, int cellZ) {
