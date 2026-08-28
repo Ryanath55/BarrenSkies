@@ -25,6 +25,7 @@ import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.core.QuartPos;
+import net.minecraft.util.Mth;
 
 /**
  * Generates the barren surface exactly as the underlying noise settings describe, then adds the sky
@@ -53,6 +54,12 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     /** How far past the smooth envelope the 3D field is allowed to place or remove rock. */
     private static final int SURFACE_MARGIN = 16;
+
+    /** How far above and below its deck an island claims the biome, beyond which the sky reads as ground. */
+    private static final int ISLAND_BIOME_REACH = 110;
+
+    /** Fraction of the temperature-sorted pool an island may vary within, for local variety. */
+    private static final double BIOME_TEMPERATURE_WINDOW = 0.18D;
 
     private static final net.minecraft.resources.ResourceLocation SKY_ISLAND_RANDOM =
         net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("barrenskies", "sky_islands");
@@ -94,15 +101,23 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         }
 
         int floor = this.shape.get().bandBottom();
+        // A height safely inside the surface pool, used to read what the ground below reports.
+        int groundQuartY = QuartPos.fromBlock(floor - 64);
         BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
-            if (QuartPos.toBlock(quartY) < floor) {
+            int y = QuartPos.toBlock(quartY);
+            if (y < floor) {
                 return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
             }
-            // One biome for the whole island, so it reads as a single place from the air.
+
             SkyIslandLayout.Island island = layout.islandAt(QuartPos.toBlock(quartX), QuartPos.toBlock(quartZ));
-            return island == null
-                ? this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler)
-                : skyBiomes.get(Math.floorMod(island.biomeSelector(), skyBiomes.size()));
+            // Only the air an island actually occupies gets its biome. Reporting a forest across the whole
+            // column meant the debug screen named a biome for open sky hundreds of blocks from any land.
+            // Empty sky takes the barren biome from the ground below instead, which is what a player
+            // flying between islands is actually above.
+            if (island == null || y < island.deckY() - ISLAND_BIOME_REACH || y > island.deckY() + ISLAND_BIOME_REACH) {
+                return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
+            }
+            return skyBiomes.get(this.skyBiomeIndex(island, skyBiomes.size(), sampler));
         };
 
         return CompletableFuture.supplyAsync(
@@ -178,6 +193,26 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /** Surface dressing for the island, chosen from the biome so a desert island is not capped with turf. */
+    /**
+     * Picks this island's biome from the sky pool, which is sorted cold to warm.
+     *
+     * <p>The world's own temperature field decides roughly where in that range to look, so neighbouring
+     * islands share a climate and a snowy peak does not end up beside a jungle. The island's own selector
+     * then chooses within a window around that point, keeping local variety without breaking the pattern.
+     */
+    private int skyBiomeIndex(SkyIslandLayout.Island island, int count, Climate.Sampler sampler) {
+        // Sampled at the anchor rather than per column, so one island is one biome throughout.
+        Climate.TargetPoint climate = sampler.sample(
+            QuartPos.fromBlock(island.centreX()), QuartPos.fromBlock(island.deckY()), QuartPos.fromBlock(island.centreZ())
+        );
+        double temperature = Mth.clamp((Climate.unquantizeCoord(climate.temperature()) + 1.0F) * 0.5D, 0.0D, 1.0D);
+
+        double window = Math.max(1.0D, count * BIOME_TEMPERATURE_WINDOW);
+        double jitter = (Math.floorMod(island.biomeSelector() * 2654435761L, 1024L) / 1023.0D - 0.5D) * window;
+        return (int) Mth.clamp(Math.round(temperature * (count - 1) + jitter), 0L, count - 1L);
+    }
+
+    /** How rugged this island is, so a mountain island is not shaped like a plains one. */
     private static TerrainProfile profileFor(Holder<Biome> biome) {
         if (biome.is(BiomeTags.IS_BADLANDS)) {
             return TerrainProfile.ERODED;

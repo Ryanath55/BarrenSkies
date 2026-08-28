@@ -29,6 +29,12 @@ public final class SkyIslandLayout {
      * shapes stop reading as islands and start breaking into unconnected debris. */
     private static final double SHAPE_NOISE = 0.72D;
 
+    /**
+     * How much landness is spent tapering from full thickness down to nothing at the shore. Larger values
+     * give long sloping headlands, smaller ones give abrupt cliffs.
+     */
+    private static final double SHORE_TAPER = 0.34D;
+
     private final long seed;
     private final Settings settings;
     private final Map<Long, List<Island>> cellCache = new ConcurrentHashMap<>();
@@ -119,26 +125,28 @@ public final class SkyIslandLayout {
         double basins = Math.max(0.0D, this.fbm(307L, x / 150.0D, z / 150.0D, 2, 0.5D)) * profile.basinCarve();
         double rough = this.fbm(409L, x / 34.0D, z / 34.0D, 3, 0.5D) * profile.roughness();
 
-        // Relief runs right up to the shore. Damping it near the edge is what built a level deck ending
-        // in one clean drop.
         double inland = Mth.clamp(landness * 3.0D, 0.0D, 1.0D);
         double relief = (macro + ridges - basins + rough) * (0.45D + 0.55D * inland);
 
-        // Cliff shelves: quantising the edge height into steps gives ledges and benches down a cliff face
+        // Cliff shelves: quantising the edge height into steps gives ledges and benches down a face
         // instead of a single sheer wall.
         double shelfBand = Math.max(0.0D, 1.0D - landness * 4.0D);
         double shelfNoise = this.ridgedFbm(701L, x / 34.0D, z / 34.0D, 3, 0.55D);
         double shelf = Math.round(shelfNoise * 2.2D) * profile.shelfHeight() * shelfBand;
 
-        int top = island.deckY() + (int) Math.round(relief + shelf);
-
-        // Thickness follows how far inland we are, so the rim thins naturally instead of being cut off.
-        double taper = Math.pow(Mth.clamp(landness * 1.6D, 0.0D, 1.0D), 0.55D);
         double bellyRelief = this.fbm(523L, x / 58.0D, z / 58.0D, 4, 0.55D) * island.thickness() * 0.55D
             + this.ridgedFbm(617L, x / 96.0D, z / 96.0D, 3, 0.5D) * island.thickness() * 0.7D
             + this.fbm(811L, x / 23.0D, z / 23.0D, 2, 0.5D) * 6.0D;
-        int belly = (int) Math.round((island.thickness() + bellyRelief) * taper);
-        int bottom = Math.min(island.deckY() - Math.max(profile.minimumThickness(), belly), top - profile.minimumThickness());
+
+        // Both surfaces close on each other as the shore is approached, so the island thins to nothing at
+        // its outline instead of ending in a wall of minimum thickness. Widening SHORE_TAPER makes for
+        // longer, gentler headlands; narrowing it brings the cliffs back.
+        double shore = Mth.clamp(landness / SHORE_TAPER, 0.0D, 1.0D);
+        shore = shore * shore * (3.0D - 2.0D * shore);
+        // The taper is applied about the deck, so the top slopes down to meet the rising underside.
+        double centre = island.deckY() + (relief + shelf) * shore;
+        int top = (int) Math.round(centre);
+        int bottom = (int) Math.round(centre - Math.max(1.0D, (island.thickness() + bellyRelief) * shore));
 
         return new Envelope(top, Math.max(bottom, this.settings.bandBottom() - 48), landness);
     }

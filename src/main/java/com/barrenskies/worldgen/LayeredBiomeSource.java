@@ -68,9 +68,13 @@ public class LayeredBiomeSource extends BiomeSource {
         return pool.findValue(sampler.sample(x, y, z));
     }
 
-    /** The biomes available to the sky islands, in a stable order so an island keeps its biome across loads. */
+    /**
+     * The biomes available to the sky islands, sorted cold to warm so an island can be picked to suit the
+     * local temperature. Anything already used on the barren surface is excluded, along with water
+     * biomes, since neither belongs on a floating island.
+     */
     public List<Holder<Biome>> skyBiomes() {
-        return this.layers.get().sky().values().stream().map(Pair::getSecond).distinct().toList();
+        return this.layers.get().skyBiomes();
     }
 
     @Override
@@ -141,11 +145,31 @@ public class LayeredBiomeSource extends BiomeSource {
         lower.forEach(entry -> everything.add(entry.getSecond()));
         sky.forEach(entry -> everything.add(entry.getSecond()));
 
+        // Whatever ended up on the barren surface has no business also being on a floating island, and
+        // neither do oceans or beaches, which need a shoreline to make sense. Sorting by temperature lets
+        // the island generator pick a biome that suits the local climate rather than at random.
+        Set<Holder<Biome>> barren = new LinkedHashSet<>();
+        lower.stream().skip(caves.size()).forEach(entry -> barren.add(entry.getSecond()));
+        List<Holder<Biome>> skyBiomes = sky.stream()
+            .map(Pair::getSecond)
+            .distinct()
+            .filter(biome -> !barren.contains(biome))
+            .filter(biome -> !isWater(biome) && !biome.is(BiomeTags.IS_BEACH))
+            .sorted(java.util.Comparator.comparing(biome -> biome.value().getBaseTemperature()))
+            .toList();
+        BarrenSkies.LOG.info(
+            "Barren Skies sky islands: {} biomes, coldest {}, warmest {}.",
+            skyBiomes.size(),
+            skyBiomes.isEmpty() ? "none" : skyBiomes.getFirst().unwrapKey().map(key -> key.location().toString()).orElse("?"),
+            skyBiomes.isEmpty() ? "none" : skyBiomes.getLast().unwrapKey().map(key -> key.location().toString()).orElse("?")
+        );
+
         BarrenSkies.LOG.info("Barren Skies biome pools: {} entries below the island band, {} above.", lower.size(), sky.size());
         return new Layers(
             new Climate.ParameterList<>(List.copyOf(lower)),
             new Climate.ParameterList<>(List.copyOf(sky)),
             Set.copyOf(everything),
+            skyBiomes,
             BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get()
         );
     }
@@ -268,7 +292,11 @@ public class LayeredBiomeSource extends BiomeSource {
     }
 
     private record Layers(
-        Climate.ParameterList<Holder<Biome>> lower, Climate.ParameterList<Holder<Biome>> sky, Set<Holder<Biome>> all, int skyBottom
+        Climate.ParameterList<Holder<Biome>> lower,
+        Climate.ParameterList<Holder<Biome>> sky,
+        Set<Holder<Biome>> all,
+        List<Holder<Biome>> skyBiomes,
+        int skyBottom
     ) {
     }
 }
