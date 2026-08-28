@@ -19,6 +19,7 @@ import net.minecraft.core.HolderGetter;
 import net.minecraft.core.QuartPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.RegistryOps;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
@@ -154,7 +155,18 @@ public class LayeredBiomeSource extends BiomeSource {
         if (biome.is(BarrenSkiesTags.ALLOWED_ON_SURFACE)) {
             return true;
         }
-        return isOceanic(entry.getFirst(), oceanContinentalnessMax) || isArid(entry, aridTemperatureMin, aridRequiresNoRain);
+        // Ocean generation is left exactly as the base worldgen made it.
+        return isWater(biome) || isOceanic(entry.getFirst(), oceanContinentalnessMax) || isArid(entry, aridTemperatureMin, aridRequiresNoRain);
+    }
+
+    /**
+     * Water biomes are identified by tag rather than by climate. The continentalness where terrain drops
+     * below sea level moves when another mod supplies the density functions, but the tags stay accurate.
+     */
+    private static boolean isWater(Holder<Biome> biome) {
+        // Oceans only. Rivers and beaches follow the land they cut through, so a frozen river or snowy
+        // beach surviving in the middle of a desert reads as a bug rather than as variety.
+        return biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_DEEP_OCEAN);
     }
 
     /**
@@ -168,6 +180,8 @@ public class LayeredBiomeSource extends BiomeSource {
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> land = surface.stream()
             // A denied biome must not come back as a substitute either, or it reappears in someone else's slot.
             .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.DENIED_ON_SURFACE))
+            .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.NEVER_PAINTED))
+            .filter(entry -> !isWater(entry.getSecond()))
             .filter(entry -> !isOceanic(entry.getFirst(), oceanContinentalnessMax))
             .filter(entry -> !aridRequiresNoRain || !entry.getSecond().value().hasPrecipitation())
             .toList();
@@ -191,6 +205,11 @@ public class LayeredBiomeSource extends BiomeSource {
         return fallback;
     }
 
+    /**
+     * Climate-based ocean detection, used only for biomes the water tags do not cover. Testing the whole
+     * range rather than its middle catches far too much: mods routinely give a land biome a continentalness
+     * range that reaches down into ocean values, and treating those as ocean leaves the surface vanilla.
+     */
     private static boolean isOceanic(Climate.ParameterPoint point, long oceanContinentalnessMax) {
         return midpoint(point.continentalness()) <= oceanContinentalnessMax;
     }

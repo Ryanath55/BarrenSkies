@@ -47,8 +47,11 @@ public final class BarrenSkiesDataGen {
         "terralith:skylands_autumn", "terralith:skylands_spring", "terralith:skylands_summer", "terralith:skylands_winter"
     );
 
-    /** Biomes that pass the arid test but do not suit the barren surface. Taste, not classification. */
-    private static final List<String> UNWANTED_ON_SURFACE = List.of("terralith:red_oasis");
+    /**
+     * Biomes that are fine where the base worldgen puts them, but too distinctive to be spread across
+     * other biomes' territory by the arid substitution.
+     */
+    private static final List<String> NEVER_PAINTED = List.of("terralith:red_oasis", "terralith:desert_oasis");
 
     private static final class BiomeTagProvider extends TagsProvider<Biome> {
         BiomeTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {
@@ -57,10 +60,13 @@ public final class BarrenSkiesDataGen {
 
         @Override
         protected void addTags(HolderLookup.Provider provider) {
-            TagAppender<Biome> denied = this.tag(BarrenSkiesTags.DENIED_ON_SURFACE);
             // Optional: these only exist when the mod that supplies them is installed.
+            TagAppender<Biome> denied = this.tag(BarrenSkiesTags.DENIED_ON_SURFACE);
             SKY_BIOMES.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
-            UNWANTED_ON_SURFACE.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
+
+            TagAppender<Biome> neverPainted = this.tag(BarrenSkiesTags.NEVER_PAINTED);
+            NEVER_PAINTED.forEach(id -> neverPainted.addOptional(ResourceLocation.parse(id)));
+
             this.tag(BarrenSkiesTags.ALLOWED_ON_SURFACE);
         }
     }

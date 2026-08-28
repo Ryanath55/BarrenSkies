@@ -15,10 +15,6 @@
     {
       "id": "terralith:skylands_winter",
       "required": false
-    },
-    {
-      "id": "terralith:red_oasis",
-      "required": false
     }
   ]
 }

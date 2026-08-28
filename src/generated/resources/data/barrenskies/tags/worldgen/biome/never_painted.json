@@ -1,0 +1,12 @@
+{
+  "values": [
+    {
+      "id": "terralith:red_oasis",
+      "required": false
+    },
+    {
+      "id": "terralith:desert_oasis",
+      "required": false
+    }
+  ]
+}
