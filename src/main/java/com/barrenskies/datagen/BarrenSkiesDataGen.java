@@ -47,6 +47,9 @@ public final class BarrenSkiesDataGen {
         "terralith:skylands_autumn", "terralith:skylands_spring", "terralith:skylands_summer", "terralith:skylands_winter"
     );
 
+    /** Biomes that pass the arid test but do not suit the barren surface. Taste, not classification. */
+    private static final List<String> UNWANTED_ON_SURFACE = List.of("terralith:red_oasis");
+
     private static final class BiomeTagProvider extends TagsProvider<Biome> {
         BiomeTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {
             super(output, Registries.BIOME, lookup, BarrenSkies.MOD_ID, existingFileHelper);
@@ -57,6 +60,7 @@ public final class BarrenSkiesDataGen {
             TagAppender<Biome> denied = this.tag(BarrenSkiesTags.DENIED_ON_SURFACE);
             // Optional: these only exist when the mod that supplies them is installed.
             SKY_BIOMES.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
+            UNWANTED_ON_SURFACE.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
             this.tag(BarrenSkiesTags.ALLOWED_ON_SURFACE);
         }
     }

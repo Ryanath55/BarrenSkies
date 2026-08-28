@@ -166,6 +166,8 @@ public class LayeredBiomeSource extends BiomeSource {
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> surface, long oceanContinentalnessMax, long aridTemperatureMin, boolean aridRequiresNoRain
     ) {
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> land = surface.stream()
+            // A denied biome must not come back as a substitute either, or it reappears in someone else's slot.
+            .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.DENIED_ON_SURFACE))
             .filter(entry -> !isOceanic(entry.getFirst(), oceanContinentalnessMax))
             .filter(entry -> !aridRequiresNoRain || !entry.getSecond().value().hasPrecipitation())
             .toList();
