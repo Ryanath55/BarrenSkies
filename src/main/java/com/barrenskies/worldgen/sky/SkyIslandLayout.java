@@ -15,6 +15,12 @@ import net.minecraft.util.Mth;
  * cliffs and detached fragments, because the rock is decided per block rather than per column.
  */
 public final class SkyIslandLayout {
+    /**
+     * Ground altitude that an island deck is mapped onto when reading terrain density. Around normal
+     * surface level, so the top of an island follows real topography rather than deep stone.
+     */
+    private static final int TERRAIN_REFERENCE_Y = 76;
+
     /** How far the 3D noise can push rock beyond the smooth envelope, in blocks. */
     private static final double SURFACE_BAND = 18.0D;
 
@@ -45,7 +51,9 @@ public final class SkyIslandLayout {
     }
 
     /** One island. {@code biomeSelector} is stable per island so the whole island reads as a single place. */
-    public record Island(int centreX, int centreZ, int radius, int deckY, int thickness, int biomeSelector) {
+    public record Island(
+        int centreX, int centreZ, int radius, int deckY, int thickness, int biomeSelector, int sampleOffsetX, int sampleOffsetZ
+    ) {
         public double normalisedDistance(int x, int z) {
             double dx = (double) (x - this.centreX) / this.radius;
             double dz = (double) (z - this.centreZ) / this.radius;
@@ -99,15 +107,23 @@ public final class SkyIslandLayout {
         double basins = Math.max(0.0D, this.fbm(307L, x / 150.0D, z / 150.0D, 2, 0.5D)) * profile.basinCarve();
         double rough = this.fbm(409L, x / 34.0D, z / 34.0D, 3, 0.5D) * profile.roughness();
 
-        double inland = Mth.clamp((1.0D - distance) * 2.6D, 0.0D, 1.0D);
-        double relief = (macro + ridges - basins + rough) * inland;
+        // Relief is carried almost all the way to the rim. Flattening it early is what produced a level
+        // deck ending in a sheer drop; letting it run means the edge height varies along the shoreline.
+        double inland = Mth.clamp((1.0D - distance) * 6.0D, 0.0D, 1.0D);
+        double relief = (macro + ridges - basins + rough) * (0.35D + 0.65D * inland);
         double dome = Math.cos(distance * Math.PI * 0.5D) * 4.0D;
-        int top = island.deckY() + (int) Math.round(relief + dome);
+        // Break the rim itself up and down so the cliff line is ragged rather than a clean circle.
+        double cliffBand = Math.max(0.0D, 1.0D - Math.abs(distance - 0.82D) * 5.0D);
+        double cliff = this.ridgedFbm(701L, x / 27.0D, z / 27.0D, 3, 0.55D) * cliffBand * profile.ridgeRelief() * 0.7D;
+        int top = island.deckY() + (int) Math.round(relief + dome + cliff);
 
         double taper = Math.pow(Math.max(0.0D, 1.0D - Math.pow(distance, profile.edgeExponent())), 0.62D);
-        double lumps = this.fbm(523L, x / 44.0D, z / 44.0D, 3, 0.55D) * 5.0D
-            + this.ridgedFbm(617L, x / 78.0D, z / 78.0D, 2, 0.5D) * 4.0D;
-        int belly = (int) Math.round(island.thickness() * taper + lumps * taper);
+        // The underside gets far more relief than the top: hanging spurs, gouges and a rolling belly,
+        // because a smooth shell is what made islands read as slabs from below.
+        double belly3d = this.fbm(523L, x / 58.0D, z / 58.0D, 4, 0.55D) * island.thickness() * 0.55D
+            + this.ridgedFbm(617L, x / 96.0D, z / 96.0D, 3, 0.5D) * island.thickness() * 0.65D
+            + this.fbm(811L, x / 23.0D, z / 23.0D, 2, 0.5D) * 5.0D;
+        int belly = (int) Math.round((island.thickness() + belly3d) * taper);
         int bottom = Math.min(island.deckY() - Math.max(profile.minimumThickness(), belly), top - profile.minimumThickness());
 
         return new Envelope(top, Math.max(bottom, this.settings.bandBottom() - 40));
@@ -118,30 +134,41 @@ public final class SkyIslandLayout {
      * noise; only within {@link #SURFACE_BAND} of a surface does the 3D field get evaluated, which is what
      * keeps this affordable while still producing overhangs and floating shards.
      */
-    public boolean isSolid(Island island, int x, int y, int z, TerrainProfile profile, Envelope envelope) {
+    public boolean isSolid(Island island, int x, int y, int z, TerrainProfile profile, Envelope envelope, TerrainSampler terrain) {
         if (envelope.isEmpty()) {
             return false;
         }
 
         // Signed distance to the nearest envelope surface: positive inside, negative outside.
+        boolean underside = y < island.deckY();
         double signed = y >= envelope.top()
             ? envelope.top() - y
             : y <= envelope.bottom() ? y - envelope.bottom() : Math.min(y - envelope.bottom(), envelope.top() - y);
 
-        if (signed > SURFACE_BAND) {
+        // The underside is allowed a wider working band than the top, so spurs and gouges can reach
+        // further than surface detail does.
+        double band = underside ? SURFACE_BAND * 1.7D : SURFACE_BAND;
+        if (signed > band) {
             return true;
         }
-        if (signed < -SURFACE_BAND) {
+        if (signed < -band) {
             return false;
         }
 
-        // Near a surface the 3D field decides, so rock can bulge outwards into overhangs or be eaten back
-        // into hollows and arches.
+        // Terrain density from the world's own noise router, read from a distant place and from normal
+        // ground altitude, then lifted here. With a terrain mod installed this is that mod's shaping, so
+        // islands inherit its character instead of looking like generic noise.
+        double lifted = terrain.density(
+            x + island.sampleOffsetX(), y - island.deckY() + TERRAIN_REFERENCE_Y, z + island.sampleOffsetZ()
+        );
+        double borrowed = Mth.clamp(lifted, -1.0D, 1.0D) * band * profile.terrainInfluence();
+
+        // Our own 3D detail on top, which keeps things broken up where the router is smooth.
         double detail = this.fbm3D(733L, x / 30.0D, y / 21.0D, z / 30.0D, 3, 0.5D);
         double veins = this.ridgedFbm3D(839L, x / 52.0D, y / 34.0D, z / 52.0D, 2, 0.5D);
-        double push = (detail * 0.72D + veins * 0.38D) * SURFACE_BAND * profile.overhang();
+        double push = (detail * 0.72D + veins * 0.38D) * band * profile.overhang() * (underside ? 1.45D : 1.0D);
 
-        return signed + push > 0.0D;
+        return signed + push + borrowed > 0.0D;
     }
 
     /**
@@ -176,7 +203,12 @@ public final class SkyIslandLayout {
         // Thickness scales with radius so small islands are not slabs and large ones are not wafers.
         int thickness = (int) (radius * (0.16D + unitFloat(mix(cellSeed, 5L, 0L)) * 0.16D)) + 10;
 
-        return List.of(new Island(x, z, radius, deckY, thickness, (int) (cellSeed >>> 24 & 0xFFFF)));
+        // Each island reads terrain density from a different, distant place, so one island lifts a
+        // mountainside and its neighbour a plain rather than every island sharing one shape.
+        int sampleX = (int) (signedFloat(cellSeed, 6L) * 400000.0D);
+        int sampleZ = (int) (signedFloat(cellSeed, 7L) * 400000.0D);
+
+        return List.of(new Island(x, z, radius, deckY, thickness, (int) (cellSeed >>> 24 & 0xFFFF), sampleX, sampleZ));
     }
 
     /** Fractal brownian motion: several octaves of value noise, roughly -1..1. */

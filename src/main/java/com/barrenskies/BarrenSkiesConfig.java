@@ -11,6 +11,7 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.IntValue ISLAND_RADIUS_MIN;
     public static final ModConfigSpec.IntValue ISLAND_RADIUS_MAX;
     public static final ModConfigSpec.IntValue ISLAND_SPACING;
+    public static final ModConfigSpec.DoubleValue WORLD_TERRAIN_INFLUENCE;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
     public static final ModConfigSpec.DoubleValue ARID_TEMPERATURE_MIN;
     public static final ModConfigSpec.BooleanValue ARID_REQUIRES_NO_RAIN;
@@ -74,6 +75,21 @@ public final class BarrenSkiesConfig {
             )
             .translation("barrenskies.configuration.islandSpacing")
             .defineInRange("islandSpacing", 300, 60, 4000);
+
+
+
+        WORLD_TERRAIN_INFLUENCE = b
+            .comment(
+                "How strongly the world own terrain noise shapes the islands.",
+                "Islands read density from the same noise router that builds the ground, sampled from a distant",
+                "place and lifted into the sky, so with a terrain mod installed they inherit its character.",
+                "This costs generation time, and a heavy terrain mod costs more. Set to 0 to skip it entirely",
+                "and fall back to the built-in island noise, which generates noticeably faster."
+            )
+            .translation("barrenskies.configuration.worldTerrainInfluence")
+            .defineInRange("worldTerrainInfluence", 1.0D, 0.0D, 2.0D);
+
+
 
 
 

@@ -10,6 +10,7 @@
   "barrenskies.configuration.islandRadiusMin": "Smallest island radius",
   "barrenskies.configuration.islandRadiusMax": "Largest island radius",
   "barrenskies.configuration.islandSpacing": "Island spacing",
+  "barrenskies.configuration.worldTerrainInfluence": "World terrain influence",
   "barrenskies.configuration.oceanContinentalnessMax": "Ocean continentalness cutoff",
   "barrenskies.configuration.aridTemperatureMin": "Arid temperature cutoff",
   "barrenskies.configuration.aridRequiresNoRain": "Arid biomes must be rainless",

@@ -18,6 +18,7 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
@@ -121,6 +122,16 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     private ChunkAccess addIslands(ChunkAccess chunk, RandomState randomState) {
         SkyIslandLayout layout = this.layout(randomState);
+        // The router belongs to whichever mod supplies the overworld noise settings, so with a terrain
+        // mod installed the islands are shaped by its density functions rather than by our own noise.
+        double influence = BarrenSkiesConfig.WORLD_TERRAIN_INFLUENCE.get();
+        TerrainSampler terrain;
+        if (influence <= 0.0D) {
+            terrain = TerrainSampler.NONE;
+        } else {
+            DensityFunction density = randomState.router().finalDensity();
+            terrain = (sx, sy, sz) -> density.compute(new DensityFunction.SinglePointContext(sx, sy, sz)) * influence;
+        }
         int minX = chunk.getPos().getMinBlockX();
         int minZ = chunk.getPos().getMinBlockZ();
         int ceiling = chunk.getMaxBuildHeight() - 1;
@@ -149,12 +160,12 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                 // Scan a margin past the envelope so the 3D field can hang rock below it or raise spurs
                 // above it. Depth is counted down from each run of solid blocks rather than from the
                 // envelope, so the top of an overhang gets its own grass instead of bare stone.
-                int from = Math.max(envelope.bottom() - SURFACE_MARGIN, chunk.getMinBuildHeight());
+                int from = Math.max(envelope.bottom() - SURFACE_MARGIN * 2, chunk.getMinBuildHeight());
                 int to = Math.min(envelope.top() + SURFACE_MARGIN, ceiling);
                 int depth = 0;
                 boolean air = true;
                 for (int y = to; y >= from; y--) {
-                    if (!layout.isSolid(island, x, y, z, profile, envelope)) {
+                    if (!layout.isSolid(island, x, y, z, profile, envelope, terrain)) {
                         air = true;
                         continue;
                     }
