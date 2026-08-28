@@ -125,13 +125,11 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         // The router belongs to whichever mod supplies the overworld noise settings, so with a terrain
         // mod installed the islands are shaped by its density functions rather than by our own noise.
         double influence = BarrenSkiesConfig.WORLD_TERRAIN_INFLUENCE.get();
-        TerrainSampler terrain;
-        if (influence <= 0.0D) {
-            terrain = TerrainSampler.NONE;
-        } else {
-            DensityFunction density = randomState.router().finalDensity();
-            terrain = (sx, sy, sz) -> density.compute(new DensityFunction.SinglePointContext(sx, sy, sz)) * influence;
-        }
+        // One sampler per chunk, sized to the sky band. The router is read on a coarse lattice rather
+        // than per block, which is how vanilla evaluates its own density functions.
+        TerrainSampler terrain = influence <= 0.0D
+            ? TerrainSampler.NONE
+            : new CoarseTerrainSampler(randomState.router().finalDensity(), influence);
         int minX = chunk.getPos().getMinBlockX();
         int minZ = chunk.getPos().getMinBlockZ();
         int ceiling = chunk.getMaxBuildHeight() - 1;
