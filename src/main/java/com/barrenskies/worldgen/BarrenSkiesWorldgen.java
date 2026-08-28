@@ -102,9 +102,12 @@ public final class BarrenSkiesWorldgen {
 
         LevelStem overworld = new LevelStem(
             dimensionTypes.getOrThrow(DIMENSION_TYPE),
+            // Use the overworld's own noise settings rather than a copy. Copying baked vanilla's terrain
+            // chain in while the climate axes stayed as references, so a terrain mod that replaces the
+            // referenced density functions left the ground disagreeing with the biome chosen for it.
             new NoiseBasedChunkGenerator(
                 new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
-                noiseSettings.getOrThrow(NOISE_SETTINGS)
+                noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD)
             )
         );
         LevelStem nether = new LevelStem(

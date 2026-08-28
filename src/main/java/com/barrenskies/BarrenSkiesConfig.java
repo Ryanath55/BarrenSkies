@@ -23,9 +23,10 @@ public final class BarrenSkiesConfig {
             .push("layers");
 
         SKY_ISLAND_BOTTOM = b
-            .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.")
+            .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.",
+                "Terrain generates up to Y 320, so keep this above that or tall peaks will be given sky biomes.")
             .translation("barrenskies.configuration.skyIslandBottom")
-            .defineInRange("skyIslandBottom", 288, 0, 447);
+            .defineInRange("skyIslandBottom", 336, 0, 447);
 
         OCEAN_CONTINENTALNESS_MAX = b
             .comment(

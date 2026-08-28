@@ -26,7 +26,6 @@ import net.neoforged.neoforge.data.event.GatherDataEvent;
 public final class BarrenSkiesDataGen {
     private static final RegistrySetBuilder BUILDER = new RegistrySetBuilder()
         .add(Registries.DIMENSION_TYPE, BarrenSkiesWorldgen::bootstrapDimensionTypes)
-        .add(Registries.NOISE_SETTINGS, BarrenSkiesWorldgen::bootstrapNoiseSettings)
         .add(Registries.WORLD_PRESET, BarrenSkiesWorldgen::bootstrapWorldPresets);
 
     @SubscribeEvent

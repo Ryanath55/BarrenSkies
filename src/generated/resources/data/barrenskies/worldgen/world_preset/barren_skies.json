@@ -7,7 +7,7 @@
         "biome_source": {
           "type": "barrenskies:layered"
         },
-        "settings": "barrenskies:barren_skies"
+        "settings": "minecraft:overworld"
       }
     },
     "minecraft:the_end": {
