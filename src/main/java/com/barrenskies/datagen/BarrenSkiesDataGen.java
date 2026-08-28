@@ -52,6 +52,11 @@ public final class BarrenSkiesDataGen {
      */
     private static final List<String> NEVER_PAINTED = List.of("terralith:red_oasis", "terralith:desert_oasis");
 
+    /** Frozen oceans read as jarring against an otherwise hot, barren surface. */
+    private static final List<String> UNWANTED_ON_SURFACE = List.of(
+        "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean", "terralith:frozen_cliffs"
+    );
+
     private static final class BiomeTagProvider extends TagsProvider<Biome> {
         BiomeTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {
             super(output, Registries.BIOME, lookup, BarrenSkies.MOD_ID, existingFileHelper);
@@ -62,6 +67,7 @@ public final class BarrenSkiesDataGen {
             // Optional: these only exist when the mod that supplies them is installed.
             TagAppender<Biome> denied = this.tag(BarrenSkiesTags.DENIED_ON_SURFACE);
             SKY_BIOMES.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
+            UNWANTED_ON_SURFACE.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
 
             TagAppender<Biome> neverPainted = this.tag(BarrenSkiesTags.NEVER_PAINTED);
             NEVER_PAINTED.forEach(id -> neverPainted.addOptional(ResourceLocation.parse(id)));

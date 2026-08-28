@@ -68,6 +68,11 @@ public class LayeredBiomeSource extends BiomeSource {
         return pool.findValue(sampler.sample(x, y, z));
     }
 
+    /** The biomes available to the sky islands, in a stable order so an island keeps its biome across loads. */
+    public List<Holder<Biome>> skyBiomes() {
+        return this.layers.get().sky().values().stream().map(Pair::getSecond).distinct().toList();
+    }
+
     @Override
     public void addDebugInfo(List<String> info, BlockPos pos, Climate.Sampler sampler) {
         Layers current = this.layers.get();

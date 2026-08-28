@@ -3,7 +3,7 @@
     "minecraft:overworld": {
       "type": "barrenskies:barren_skies",
       "generator": {
-        "type": "minecraft:noise",
+        "type": "barrenskies:sky_islands",
         "biome_source": {
           "type": "barrenskies:layered"
         },

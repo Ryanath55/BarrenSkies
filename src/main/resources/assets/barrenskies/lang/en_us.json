@@ -5,6 +5,7 @@
   "barrenskies.configuration.section.layers": "Layers",
 
   "barrenskies.configuration.skyIslandBottom": "Sky island floor (Y)",
+  "barrenskies.configuration.islandDensity": "Sky island density",
   "barrenskies.configuration.oceanContinentalnessMax": "Ocean continentalness cutoff",
   "barrenskies.configuration.aridTemperatureMin": "Arid temperature cutoff",
   "barrenskies.configuration.aridRequiresNoRain": "Arid biomes must be rainless",

@@ -6,6 +6,7 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec SPEC;
 
     public static final ModConfigSpec.IntValue SKY_ISLAND_BOTTOM;
+    public static final ModConfigSpec.DoubleValue ISLAND_DENSITY;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
     public static final ModConfigSpec.DoubleValue ARID_TEMPERATURE_MIN;
     public static final ModConfigSpec.BooleanValue ARID_REQUIRES_NO_RAIN;
@@ -27,6 +28,15 @@ public final class BarrenSkiesConfig {
                 "Terrain generates up to Y 320, so keep this above that or tall peaks will be given sky biomes.")
             .translation("barrenskies.configuration.skyIslandBottom")
             .defineInRange("skyIslandBottom", 336, 0, 447);
+
+        ISLAND_DENSITY = b
+            .comment(
+                "How much of the sky is filled with island clusters.",
+                "1.0 is the default archipelago spacing: clusters of 3-6 islands with long empty crossings between them.",
+                "Raise toward 2.0 for a crowded sky, lower toward 0.2 for rare, hard-won landmasses."
+            )
+            .translation("barrenskies.configuration.islandDensity")
+            .defineInRange("islandDensity", 1.0D, 0.05D, 3.0D);
 
         OCEAN_CONTINENTALNESS_MAX = b
             .comment(

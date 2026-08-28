@@ -20,6 +20,8 @@ import net.minecraft.world.level.biome.TheEndBiomeSource;
 import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
+import com.barrenskies.worldgen.sky.SkyIslandChunkGenerator;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.NoiseSettings;
@@ -43,12 +45,18 @@ public final class BarrenSkiesWorldgen {
         Registries.BIOME_SOURCE, BarrenSkies.MOD_ID
     );
 
+    private static final DeferredRegister<MapCodec<? extends ChunkGenerator>> CHUNK_GENERATORS = DeferredRegister.create(
+        Registries.CHUNK_GENERATOR, BarrenSkies.MOD_ID
+    );
+
     static {
         BIOME_SOURCES.register("layered", () -> LayeredBiomeSource.CODEC);
+        CHUNK_GENERATORS.register("sky_islands", () -> SkyIslandChunkGenerator.CODEC);
     }
 
     public static void register(IEventBus modBus) {
         BIOME_SOURCES.register(modBus);
+        CHUNK_GENERATORS.register(modBus);
     }
 
     public static void bootstrapDimensionTypes(BootstrapContext<DimensionType> context) {
@@ -105,7 +113,7 @@ public final class BarrenSkiesWorldgen {
             // Use the overworld's own noise settings rather than a copy. Copying baked vanilla's terrain
             // chain in while the climate axes stayed as references, so a terrain mod that replaces the
             // referenced density functions left the ground disagreeing with the biome chosen for it.
-            new NoiseBasedChunkGenerator(
+            new SkyIslandChunkGenerator(
                 new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
                 noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD)
             )
