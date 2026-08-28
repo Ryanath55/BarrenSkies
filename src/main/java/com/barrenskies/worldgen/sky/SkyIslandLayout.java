@@ -35,6 +35,12 @@ public final class SkyIslandLayout {
      */
     private static final double SHORE_TAPER = 0.34D;
 
+    /**
+     * How far past its own shoreline an island still influences the blended height of its neighbours.
+     * Large enough that islands which merely approach each other meet at a slope rather than a step.
+     */
+    private static final double BLEND_REACH = 0.55D;
+
     private final long seed;
     private final Settings settings;
     private final Map<Long, List<Island>> cellCache = new ConcurrentHashMap<>();
@@ -91,17 +97,42 @@ public final class SkyIslandLayout {
         return falloff + shape * SHAPE_NOISE;
     }
 
-    /** The island covering this column, or null for open sky. Where blobs meet, the stronger claim wins. */
-    public Island islandAt(int blockX, int blockZ) {
+    /**
+     * What a column is made of: which island owns it, how far inland it is, and the height it sits at.
+     *
+     * <p>{@code deckY} is blended across every island claiming the column rather than taken from the
+     * winner alone. Taking the winner's height meant two overlapping islands at different altitudes met
+     * along a line where the ground jumped hundreds of blocks in one step, which is where the worst
+     * cliffs came from.
+     */
+    public record Column(Island island, double landness, int deckY) {
+    }
+
+    /** The column at this position, or null for open sky. */
+    public Column columnAt(int blockX, int blockZ) {
         int cellX = Math.floorDiv(blockX, this.settings.spacing());
         int cellZ = Math.floorDiv(blockZ, this.settings.spacing());
 
         Island best = null;
         double bestLandness = 0.0D;
+        double weightedDeck = 0.0D;
+        double totalWeight = 0.0D;
+
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 for (Island island : this.cell(cellX + dx, cellZ + dz)) {
                     double landness = this.landness(island, blockX, blockZ);
+                    // Height blending reaches past the shoreline, so an island still pulls on the height of
+                    // a neighbour it merely approaches. Without that reach, two islands that meet without
+                    // their fields overlapping produce a step of hundreds of blocks at the join.
+                    if (landness <= -BLEND_REACH) {
+                        continue;
+                    }
+                    // Squared weighting keeps an island's interior at its own height and confines the
+                    // blending to the seam between them.
+                    double weight = (landness + BLEND_REACH) * (landness + BLEND_REACH);
+                    weightedDeck += weight * island.deckY();
+                    totalWeight += weight;
                     if (landness > bestLandness) {
                         bestLandness = landness;
                         best = island;
@@ -109,15 +140,14 @@ public final class SkyIslandLayout {
                 }
             }
         }
-        return best;
+
+        return best == null ? null : new Column(best, bestLandness, (int) Math.round(weightedDeck / totalWeight));
     }
 
     /** The smooth top and bottom of an island at this column. */
-    public Envelope envelope(Island island, int x, int z, TerrainProfile profile) {
-        double landness = this.landness(island, x, z);
-        if (landness <= 0.0D) {
-            return new Envelope(Integer.MIN_VALUE, Integer.MAX_VALUE, 0.0D);
-        }
+    public Envelope envelope(Column column, int x, int z, TerrainProfile profile) {
+        double landness = column.landness();
+        Island island = column.island();
 
         // Broad swells, ridgelines, scooped basins and fine roughness, each scaled by the profile.
         double macro = this.fbm(101L, x / 190.0D, z / 190.0D, 4, 0.5D) * profile.macroRelief();
@@ -144,7 +174,7 @@ public final class SkyIslandLayout {
         double shore = Mth.clamp(landness / SHORE_TAPER, 0.0D, 1.0D);
         shore = shore * shore * (3.0D - 2.0D * shore);
         // The taper is applied about the deck, so the top slopes down to meet the rising underside.
-        double centre = island.deckY() + (relief + shelf) * shore;
+        double centre = column.deckY() + (relief + shelf) * shore;
         int top = (int) Math.round(centre);
         int bottom = (int) Math.round(centre - Math.max(1.0D, (island.thickness() + bellyRelief) * shore));
 
@@ -156,12 +186,13 @@ public final class SkyIslandLayout {
      * noise; only near a surface does the 3D field get evaluated, which is what keeps this affordable
      * while still producing overhangs, notches and floating shards.
      */
-    public boolean isSolid(Island island, int x, int y, int z, TerrainProfile profile, Envelope envelope, TerrainSampler terrain) {
+    public boolean isSolid(Column column, int x, int y, int z, TerrainProfile profile, Envelope envelope, TerrainSampler terrain) {
         if (envelope.isEmpty()) {
             return false;
         }
 
-        boolean underside = y < island.deckY();
+        Island island = column.island();
+        boolean underside = y < column.deckY();
         double signed = y >= envelope.top()
             ? envelope.top() - y
             : y <= envelope.bottom() ? y - envelope.bottom() : Math.min(y - envelope.bottom(), envelope.top() - y);
@@ -178,7 +209,7 @@ public final class SkyIslandLayout {
         }
 
         double lifted = terrain.density(
-            x + island.sampleOffsetX(), y - island.deckY() + TERRAIN_REFERENCE_Y, z + island.sampleOffsetZ()
+            x + island.sampleOffsetX(), y - column.deckY() + TERRAIN_REFERENCE_Y, z + island.sampleOffsetZ()
         );
         double borrowed = Mth.clamp(lifted, -1.0D, 1.0D) * band * profile.terrainInfluence();
 

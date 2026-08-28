@@ -109,15 +109,22 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                 return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
             }
 
-            SkyIslandLayout.Island island = layout.islandAt(QuartPos.toBlock(quartX), QuartPos.toBlock(quartZ));
-            // Only the air an island actually occupies gets its biome. Reporting a forest across the whole
-            // column meant the debug screen named a biome for open sky hundreds of blocks from any land.
-            // Empty sky takes the barren biome from the ground below instead, which is what a player
-            // flying between islands is actually above.
-            if (island == null || y < island.deckY() - ISLAND_BIOME_REACH || y > island.deckY() + ISLAND_BIOME_REACH) {
+            int x = QuartPos.toBlock(quartX);
+            int z = QuartPos.toBlock(quartZ);
+            SkyIslandLayout.Column column = layout.columnAt(x, z);
+            if (column == null) {
                 return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
-            return skyBiomes.get(this.skyBiomeIndex(island, skyBiomes.size(), sampler));
+
+            // Work out the island biome first, since it decides the terrain profile, then use that profile
+            // to find where the rock actually is. Guessing a fixed reach instead reported a sky biome over
+            // open air, and reported the ground biome on island rock that hung far below its deck.
+            Holder<Biome> islandBiome = skyBiomes.get(this.skyBiomeIndex(column, skyBiomes.size(), sampler));
+            SkyIslandLayout.Envelope envelope = layout.envelope(column, x, z, profileFor(islandBiome));
+            if (envelope.isEmpty() || y < envelope.bottom() - SURFACE_MARGIN * 2 || y > envelope.top() + SURFACE_MARGIN) {
+                return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
+            }
+            return islandBiome;
         };
 
         return CompletableFuture.supplyAsync(
@@ -154,18 +161,18 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             for (int dz = 0; dz < 16; dz++) {
                 int x = minX + dx;
                 int z = minZ + dz;
-                SkyIslandLayout.Island island = layout.islandAt(x, z);
-                if (island == null) {
+                SkyIslandLayout.Column column = layout.columnAt(x, z);
+                if (column == null) {
                     continue;
                 }
 
                 // Biomes are filled before terrain, and a sky biome does not vary with height, so the
                 // island biome is available here and is what decides how its terrain is shaped.
                 Holder<Biome> biome = chunk.getNoiseBiome(
-                    QuartPos.fromBlock(x), QuartPos.fromBlock(island.deckY()), QuartPos.fromBlock(z)
+                    QuartPos.fromBlock(x), QuartPos.fromBlock(column.deckY()), QuartPos.fromBlock(z)
                 );
                 TerrainProfile profile = profileFor(biome);
-                SkyIslandLayout.Envelope envelope = layout.envelope(island, x, z, profile);
+                SkyIslandLayout.Envelope envelope = layout.envelope(column, x, z, profile);
                 if (envelope.isEmpty()) {
                     continue;
                 }
@@ -178,7 +185,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                 int depth = 0;
                 boolean air = true;
                 for (int y = to; y >= from; y--) {
-                    if (!layout.isSolid(island, x, y, z, profile, envelope, terrain)) {
+                    if (!layout.isSolid(column, x, y, z, profile, envelope, terrain)) {
                         air = true;
                         continue;
                     }
@@ -200,7 +207,8 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
      * islands share a climate and a snowy peak does not end up beside a jungle. The island's own selector
      * then chooses within a window around that point, keeping local variety without breaking the pattern.
      */
-    private int skyBiomeIndex(SkyIslandLayout.Island island, int count, Climate.Sampler sampler) {
+    private int skyBiomeIndex(SkyIslandLayout.Column column, int count, Climate.Sampler sampler) {
+        SkyIslandLayout.Island island = column.island();
         // Sampled at the anchor rather than per column, so one island is one biome throughout.
         Climate.TargetPoint climate = sampler.sample(
             QuartPos.fromBlock(island.centreX()), QuartPos.fromBlock(island.deckY()), QuartPos.fromBlock(island.centreZ())
