@@ -1,0 +1,12 @@
+{
+  "generator.barrenskies.barren_skies": "Barren Skies",
+
+  "barrenskies.configuration.title": "Barren Skies",
+  "barrenskies.configuration.section.layers": "Layers",
+
+  "barrenskies.configuration.skyIslandBottom": "Sky island floor (Y)",
+  "barrenskies.configuration.oceanContinentalnessMax": "Ocean continentalness cutoff",
+  "barrenskies.configuration.aridTemperatureMin": "Arid temperature cutoff",
+  "barrenskies.configuration.aridRequiresNoRain": "Arid biomes must be rainless",
+  "barrenskies.configuration.includeModdedBiomes": "Use biomes from other mods"
+}

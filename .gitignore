@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+
+# Dev-environment runtime: test worlds, logs, and a config that is not the shipped default.
+run/
+run-data/
+runs/
+
+# IDE
+.idea/
+.vscode/
+.eclipse/
+*.iml
+bin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Datagen cache: rewritten on every datagen run, pure diff noise.
+src/generated/resources/.cache/
