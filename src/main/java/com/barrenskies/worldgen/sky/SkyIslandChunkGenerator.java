@@ -60,6 +60,46 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         return CODEC;
     }
 
+    @Override
+    public java.util.concurrent.CompletableFuture<net.minecraft.world.level.chunk.ChunkAccess> createBiomes(
+        net.minecraft.world.level.levelgen.RandomState randomState,
+        net.minecraft.world.level.levelgen.blending.Blender blender,
+        net.minecraft.world.level.StructureManager structureManager,
+        net.minecraft.world.level.chunk.ChunkAccess chunk
+    ) {
+        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get();
+        int layerCount = BarrenSkiesConfig.ISLAND_LAYERS.get();
+        double threshold = BarrenSkiesConfig.ISLAND_THRESHOLD.get();
+        double scale = BarrenSkiesConfig.ISLAND_SCALE.get();
+        NormalNoise islandNoise = randomState.getOrCreateNoise(SkyIslandDensity.ISLANDS);
+        // A height well inside the barren pool, used to report what the ground below is.
+        int groundQuartY = net.minecraft.core.QuartPos.fromBlock(floor - 64);
+
+        net.minecraft.world.level.biome.BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
+            if (net.minecraft.core.QuartPos.toBlock(quartY) >= floor
+                && !SkyIslandDensity.hasIsland(
+                    islandNoise,
+                    net.minecraft.core.QuartPos.toBlock(quartX),
+                    net.minecraft.core.QuartPos.toBlock(quartZ),
+                    layerCount,
+                    threshold,
+                    scale
+                )) {
+                // Open sky between islands reports the ground beneath rather than naming a biome for air.
+                return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
+            }
+            return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
+        };
+
+        return java.util.concurrent.CompletableFuture.supplyAsync(
+            () -> {
+                chunk.fillBiomesFromNoise(resolver, randomState.sampler());
+                return chunk;
+            },
+            net.minecraft.Util.backgroundExecutor()
+        );
+    }
+
     /** Rebuilds the world's noise settings with the islands added and room above for them to sit in. */
     private static NoiseGeneratorSettings withIslands(
         Holder<NoiseGeneratorSettings> base,

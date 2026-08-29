@@ -146,15 +146,29 @@ public class LayeredBiomeSource extends BiomeSource {
         sky.forEach(entry -> everything.add(entry.getSecond()));
 
         // Whatever ended up on the barren surface has no business also being on a floating island, and
-        // neither do oceans or beaches, which need a shoreline to make sense. Sorting by temperature lets
-        // the island generator pick a biome that suits the local climate rather than at random.
+        // neither do oceans or beaches, which need a shoreline to make sense.
         Set<Holder<Biome>> barren = new LinkedHashSet<>();
         lower.stream().skip(caves.size()).forEach(entry -> barren.add(entry.getSecond()));
+        java.util.function.Predicate<Holder<Biome>> suitsSky =
+            biome -> !barren.contains(biome) && !isWater(biome) && !biome.is(BiomeTags.IS_BEACH);
+
+        // The island pool is remapped the same way the surface is, rather than filtered. Dropping entries
+        // would leave holes for the nearest surviving entry to fill, which is how deserts and oceans kept
+        // turning up on islands.
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> skyPalette = sky.stream().filter(entry -> suitsSky.test(entry.getSecond())).toList();
+        if (!skyPalette.isEmpty()) {
+            List<Pair<Climate.ParameterPoint, Holder<Biome>>> remapped = new ArrayList<>(sky.size());
+            for (Pair<Climate.ParameterPoint, Holder<Biome>> entry : sky) {
+                remapped.add(
+                    suitsSky.test(entry.getSecond()) ? entry : Pair.of(entry.getFirst(), nearestBiome(entry.getFirst(), skyPalette))
+                );
+            }
+            sky = remapped;
+        }
+
         List<Holder<Biome>> skyBiomes = sky.stream()
             .map(Pair::getSecond)
             .distinct()
-            .filter(biome -> !barren.contains(biome))
-            .filter(biome -> !isWater(biome) && !biome.is(BiomeTags.IS_BEACH))
             .sorted(java.util.Comparator.comparing(biome -> biome.value().getBaseTemperature()))
             .toList();
         BarrenSkies.LOG.info(
@@ -255,6 +269,25 @@ public class LayeredBiomeSource extends BiomeSource {
      */
     private static long midpoint(Climate.Parameter parameter) {
         return (parameter.min() + parameter.max()) / 2L;
+    }
+
+    /** Nearest entry across the whole climate space, used when swapping one biome pool for another. */
+    private static Holder<Biome> nearestBiome(Climate.ParameterPoint point, List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette) {
+        Holder<Biome> best = palette.getFirst().getSecond();
+        long bestDistance = Long.MAX_VALUE;
+        for (Pair<Climate.ParameterPoint, Holder<Biome>> candidate : palette) {
+            Climate.ParameterPoint other = candidate.getFirst();
+            long distance = square(gap(point.temperature(), other.temperature()))
+                + square(gap(point.humidity(), other.humidity()))
+                + square(gap(point.continentalness(), other.continentalness()))
+                + square(gap(point.erosion(), other.erosion()))
+                + square(gap(point.weirdness(), other.weirdness()));
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = candidate.getSecond();
+            }
+        }
+        return best;
     }
 
     /**

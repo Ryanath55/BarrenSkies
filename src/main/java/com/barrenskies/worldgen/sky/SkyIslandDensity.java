@@ -44,6 +44,22 @@ public final class SkyIslandDensity {
     private SkyIslandDensity() {
     }
 
+    /**
+     * Whether any island layer claims this column, evaluated exactly as the density function does.
+     *
+     * <p>The biome pass runs before terrain and cannot ask what was generated, so without this it names a
+     * sky biome for every column above the island floor, including open air between islands.
+     */
+    public static boolean hasIsland(NormalNoise noise, int x, int z, int layerCount, double threshold, double horizontalScale) {
+        for (int i = 0; i < layerCount; i++) {
+            double shift = i * 4096.0D;
+            if (noise.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold > 0.0D) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static ResourceKey<NormalNoise.NoiseParameters> noise(String path) {
         return ResourceKey.create(Registries.NOISE, ResourceLocation.fromNamespaceAndPath("barrenskies", path));
     }
@@ -111,7 +127,9 @@ public final class SkyIslandDensity {
         // air in the world density runs far more negative than that. Left unscaled it would lift genuine
         // air up against the solid threshold and scatter spikes across the world. Scaling both sides
         // equally leaves the surface exactly where it was.
-        return DensityFunctions.mul(combined, DensityFunctions.constant(SCALE));
+        // Interpolated across noise cells, the way the game interpolates its own terrain. Without this the
+        // per-column caching below shows through as flat square steps rather than a smooth surface.
+        return DensityFunctions.interpolated(DensityFunctions.mul(combined, DensityFunctions.constant(SCALE)));
     }
 
     /**
@@ -128,10 +146,12 @@ public final class SkyIslandDensity {
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
         // Low ridge values give flatter islands, high ones give taller and more broken ones.
-        spline.addPoint(-1.0F, thickness(inland, upper, upper ? 0.55F : 0.62F));
-        spline.addPoint(-0.2F, thickness(inland, upper, upper ? 0.78F : 0.70F));
-        spline.addPoint(0.3F, thickness(inland, upper, upper ? 1.05F : 0.78F));
-        spline.addPoint(1.0F, thickness(inland, upper, upper ? 0.72F : 0.66F));
+        // Every peak must stay below one. The fade gradient bottoms out at minus one, so an offset of one or
+        // more leaves the column solid however high it goes, which is what grew pillars to the world ceiling.
+        spline.addPoint(-1.0F, thickness(inland, upper, upper ? 0.52F : 0.58F));
+        spline.addPoint(-0.2F, thickness(inland, upper, upper ? 0.70F : 0.66F));
+        spline.addPoint(0.3F, thickness(inland, upper, upper ? 0.90F : 0.74F));
+        spline.addPoint(1.0F, thickness(inland, upper, upper ? 0.66F : 0.62F));
         return DensityFunctions.spline(spline.build());
     }
 
