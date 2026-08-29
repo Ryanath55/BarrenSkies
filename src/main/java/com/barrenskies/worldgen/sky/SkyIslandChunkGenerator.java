@@ -69,13 +69,14 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         net.minecraft.world.level.StructureManager structureManager,
         net.minecraft.world.level.chunk.ChunkAccess chunk
     ) {
-        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get();
+        // Islands hang a layer reach below the configured floor, so the biome switch has to sit that low too.
+        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.LAYER_REACH;
         int layerCount = BarrenSkiesConfig.ISLAND_LAYERS.get();
         double threshold = BarrenSkiesConfig.ISLAND_THRESHOLD.get();
         double scale = BarrenSkiesConfig.ISLAND_SCALE.get();
         NormalNoise islandNoise = randomState.getOrCreateNoise(SkyIslandDensity.ISLANDS);
         // A height well inside the barren pool, used to report what the ground below is.
-        int groundQuartY = net.minecraft.core.QuartPos.fromBlock(floor - 64);
+        int groundQuartY = net.minecraft.core.QuartPos.fromBlock(floor - 96);
 
         net.minecraft.world.level.biome.BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
             if (net.minecraft.core.QuartPos.toBlock(quartY) >= floor
@@ -137,8 +138,8 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             // Only the final density carries the islands. The other one sets the preliminary surface level,
             // which is a single height per column: folding islands into it moved that level up to the
             // island, so the ground underneath never met its own surface rules and was left bare stone.
-            // The cost is that heightmap queries do not see island tops, which is what structure placement
-            // uses, so structures still belong to the ground below.
+            // Structures are unaffected: height queries read the final density, not this one, which is why
+            // Skylands over the Sea ships no structure files of its own.
             router.initialDensityWithoutJaggedness(),
             DensityFunctions.max(router.finalDensity(), islands),
             router.veinToggle(),

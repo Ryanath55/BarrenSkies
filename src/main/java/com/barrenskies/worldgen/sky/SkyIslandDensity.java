@@ -55,8 +55,13 @@ public final class SkyIslandDensity {
      */
     private static final double SCALE = 24.0D;
 
-    /** Vertical distance from a layer to where its rock has completely faded out. */
-    private static final int LAYER_REACH = 64;
+    /**
+     * Vertical distance from a layer to where its rock has completely faded out.
+     *
+     * <p>Islands therefore reach this far below the configured floor, which the biome side has to allow
+     * for. Switching pools at the floor itself left the underside of every island taking barren biomes.
+     */
+    public static final int LAYER_REACH = 64;
 
     private SkyIslandDensity() {
     }
@@ -197,11 +202,14 @@ public final class SkyIslandDensity {
             // resting on the threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.08F, -0.25F, 1.6F)
+            // Shape follows Skylands over the Sea: rise steeply from the shore, peak early, then fall away
+            // again deeper in. Holding a plateau across the interior instead is what made islands read as
+            // domes, since a flat top with rounded edges is exactly that.
             .addPoint(0.0F, 0.0F, 2.0F)
-            .addPoint(0.06F, peak * 0.35F, upper ? 3.0F : 2.4F)
-            .addPoint(0.2F, peak * 0.85F, upper ? 1.1F : 0.8F)
-            .addPoint(0.45F, peak, 0.0F)
-            .addPoint(0.8F, peak * (upper ? 0.82F : 0.9F), 0.0F)
+            .addPoint(0.145F, peak * 0.82F, upper ? 0.9F : 0.7F)
+            .addPoint(0.316F, peak, upper ? -0.63F : -0.45F)
+            .addPoint(0.418F, peak * 0.40F, 0.0F)
+            .addPoint(0.75F, peak * (upper ? 0.30F : 0.45F), 0.0F)
             .build();
     }
 }
