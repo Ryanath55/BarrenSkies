@@ -32,6 +32,23 @@ import net.minecraft.world.level.levelgen.synth.NormalNoise;
 public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLANDS = noise("islands");
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_RIDGES = noise("island_ridges");
+    public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_DETAIL = noise("island_detail");
+
+    /**
+     * How far the 3D detail noise can move the island surface, as a fraction of a layer reach.
+     *
+     * <p>Without this the surface is purely a height field over smooth noise, which can only produce
+     * domes however the splines are shaped. This is the term that cuts cliffs, ledges and overhangs into
+     * them, and it is the same trick the game uses on its own ground.
+     *
+     * <p>Kept small on purpose. The noise itself ranges to about plus or minus two, and a density unit is
+     * worth a whole layer reach in blocks, so a value that looks modest here moves the surface a long way
+     * and can carve a thin island away entirely.
+     */
+    private static final double DETAIL_STRENGTH = 0.14D;
+
+    /** Extra reach given to the biome mask so island edges are never left reporting the ground biome. */
+    public static final double BIOME_MASK_MARGIN = 0.08D;
 
     /**
      * How far the island field is scaled up before joining the world density. See where it is applied.
@@ -53,7 +70,10 @@ public final class SkyIslandDensity {
     public static boolean hasIsland(NormalNoise noise, int x, int z, int layerCount, double threshold, double horizontalScale) {
         for (int i = 0; i < layerCount; i++) {
             double shift = i * 4096.0D;
-            if (noise.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold > 0.0D) {
+            // A margin wider than the terrain mask, because the density is interpolated across cells and
+            // rock bleeds slightly past where the mask alone says land. Without it those edge columns
+            // fall through and report the barren biome from the ground below.
+            if (noise.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold + BIOME_MASK_MARGIN > 0.0D) {
                 return true;
             }
         }
@@ -74,6 +94,7 @@ public final class SkyIslandDensity {
     public static DensityFunction build(
         Holder<NormalNoise.NoiseParameters> islands,
         Holder<NormalNoise.NoiseParameters> ridges,
+        Holder<NormalNoise.NoiseParameters> detail,
         int bandBottom,
         int bandTop,
         int layerCount,
@@ -84,6 +105,11 @@ public final class SkyIslandDensity {
         // height component and would otherwise be recomputed for every block in the column.
         DensityFunction ridgeField = DensityFunctions.flatCache(
             DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 0.25D, ridges)
+        );
+
+        // Three dimensional detail, which is what turns a smooth dome into terrain with faces and ledges.
+        DensityFunction detailField = DensityFunctions.mul(
+            DensityFunctions.noise(detail, 1.0D, 0.6D), DensityFunctions.constant(DETAIL_STRENGTH)
         );
 
         List<DensityFunction> layers = new ArrayList<>(layerCount);
@@ -115,7 +141,9 @@ public final class SkyIslandDensity {
             DensityFunction fadeDown = DensityFunctions.add(
                 DensityFunctions.yClampedGradient(centre - LAYER_REACH, centre, -1.0D, 0.0D), bottom
             );
-            layers.add(DensityFunctions.min(fadeUp, fadeDown));
+            // Detail is added after the two fades meet, so it cuts into the top and the underside alike.
+            // Far from any island the fades are strongly negative, so it cannot strand rock in open sky.
+            layers.add(DensityFunctions.add(DensityFunctions.min(fadeUp, fadeDown), detailField));
         }
 
         DensityFunction combined = layers.getFirst();

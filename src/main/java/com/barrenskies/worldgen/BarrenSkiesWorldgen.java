@@ -99,6 +99,11 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
         );
+        // Finer and fully three dimensional, so it can undercut a face rather than only raise or lower it.
+        context.register(
+            com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL,
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-6, 1.0D, 1.0D, 0.6D, 0.3D)
+        );
     }
 
     public static void bootstrapNoiseSettings(BootstrapContext<NoiseGeneratorSettings> context) {
@@ -136,7 +141,8 @@ public final class BarrenSkiesWorldgen {
                 new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
                 noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD),
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLANDS),
-                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES)
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES),
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL)
             )
         );
         LevelStem nether = new LevelStem(
