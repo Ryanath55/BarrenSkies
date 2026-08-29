@@ -24,3 +24,6 @@ and lush sky islands above. Picks up biomes from other biome mods where they fit
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+[[mixins]]
+config="barrenskies.mixins.json"

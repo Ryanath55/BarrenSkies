@@ -51,19 +51,14 @@ public final class BarrenSkiesWorldgen {
         Registries.CHUNK_GENERATOR, BarrenSkies.MOD_ID
     );
 
-    private static final DeferredRegister<MapCodec<? extends net.minecraft.world.level.levelgen.DensityFunction>> DENSITY_FUNCTIONS =
-        DeferredRegister.create(Registries.DENSITY_FUNCTION_TYPE, BarrenSkies.MOD_ID);
-
     static {
         BIOME_SOURCES.register("layered", () -> LayeredBiomeSource.CODEC);
         CHUNK_GENERATORS.register("sky_islands", () -> SkyIslandChunkGenerator.CODEC);
-        DENSITY_FUNCTIONS.register("sky_islands", () -> com.barrenskies.worldgen.sky.SkyIslandDensityFunction.CODEC_INSTANCE);
     }
 
     public static void register(IEventBus modBus) {
         BIOME_SOURCES.register(modBus);
         CHUNK_GENERATORS.register(modBus);
-        DENSITY_FUNCTIONS.register(modBus);
     }
 
     public static void bootstrapDimensionTypes(BootstrapContext<DimensionType> context) {
@@ -86,6 +81,23 @@ public final class BarrenSkiesWorldgen {
                 0.0F,
                 new DimensionType.MonsterSettings(false, true, UniformInt.of(0, 7), 0)
             )
+        );
+    }
+
+    /**
+     * Noise for the island shape and for varying its surface.
+     *
+     * <p>The island parameters are taken from Klinbee's Skylands over the Sea (MIT). The negative amplitude
+     * in the middle of the series is what stops the islands reading as round blobs.
+     */
+    public static void bootstrapNoises(BootstrapContext<net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters> context) {
+        context.register(
+            com.barrenskies.worldgen.sky.SkyIslandDensity.ISLANDS,
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-8, 1.0D, 1.0D, 2.0D, 0.0D, -2.0D, 1.0D, 0.0D)
+        );
+        context.register(
+            com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES,
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
         );
     }
 
@@ -123,7 +135,8 @@ public final class BarrenSkiesWorldgen {
             new SkyIslandChunkGenerator(
                 new LayeredBiomeSource(biomes, parameterLists.getOrThrow(MultiNoiseBiomeSourceParameterLists.OVERWORLD)),
                 noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD),
-                context.lookup(Registries.NOISE).getOrThrow(net.minecraft.world.level.levelgen.Noises.AQUIFER_BARRIER)
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLANDS),
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES)
             )
         );
         LevelStem nether = new LevelStem(

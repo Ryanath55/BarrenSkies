@@ -7,11 +7,10 @@ public final class BarrenSkiesConfig {
 
     public static final ModConfigSpec.IntValue SKY_ISLAND_BOTTOM;
     public static final ModConfigSpec.IntValue SKY_ISLAND_TOP;
-    public static final ModConfigSpec.DoubleValue ISLAND_DENSITY;
-    public static final ModConfigSpec.IntValue ISLAND_RADIUS_MIN;
-    public static final ModConfigSpec.IntValue ISLAND_RADIUS_MAX;
-    public static final ModConfigSpec.IntValue ISLAND_SPACING;
-    public static final ModConfigSpec.DoubleValue WORLD_TERRAIN_INFLUENCE;
+    public static final ModConfigSpec.IntValue ISLAND_LAYERS;
+    public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD;
+    public static final ModConfigSpec.DoubleValue ISLAND_SCALE;
+    public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
     public static final ModConfigSpec.DoubleValue ARID_TEMPERATURE_MIN;
     public static final ModConfigSpec.BooleanValue ARID_REQUIRES_NO_RAIN;
@@ -51,51 +50,40 @@ public final class BarrenSkiesConfig {
             .defineInRange("skyIslandTop", 520, 0, 950);
 
 
-        ISLAND_DENSITY = b
+        ISLAND_LAYERS = b
             .comment(
-                "Fraction of grid cells that hold an island, before size is taken into account.",
-                "This is a multiplier on a 0.55 base, so 1.0 fills about 55 percent of cells.",
-                "Combine with islandSpacing and the radii for fine control over how much open sky there is."
+                "How many overlapping layers of islands to stack between the floor and the ceiling.",
+                "Layers are combined by taking whichever is denser, so islands from different layers overlap",
+                "and merge rather than averaging their heights. More layers means a busier, more vertical sky."
             )
-            .translation("barrenskies.configuration.islandDensity")
-            .defineInRange("islandDensity", 1.0D, 0.05D, 3.0D);
+            .translation("barrenskies.configuration.islandLayers")
+            .defineInRange("islandLayers", 3, 1, 8);
 
-        ISLAND_RADIUS_MIN = b
-            .comment("Smallest island radius in blocks. An island is roughly twice this across at its narrowest.")
-            .translation("barrenskies.configuration.islandRadiusMin")
-            .defineInRange("islandRadiusMin", 95, 20, 600);
-
-
-
-        ISLAND_RADIUS_MAX = b
-            .comment("Largest island radius in blocks. Values below the minimum are treated as equal to it.")
-            .translation("barrenskies.configuration.islandRadiusMax")
-            .defineInRange("islandRadiusMax", 180, 20, 600);
-
-
-
-        ISLAND_SPACING = b
+        ISLAND_THRESHOLD = b
             .comment(
-                "Grid pitch between island centres, in blocks. Lower packs islands closer together.",
-                "Sky coverage is roughly density * pi * meanRadius^2 / spacing^2, so if you change the radii",
-                "and want the same amount of open sky, scale this with them."
+                "How much of the island noise counts as land. Higher leaves more open sky.",
+                "Around 0.30 gives large connected landmasses, 0.55 gives sparse scattered islands."
             )
-            .translation("barrenskies.configuration.islandSpacing")
-            .defineInRange("islandSpacing", 300, 60, 4000);
+            .translation("barrenskies.configuration.islandThreshold")
+            .defineInRange("islandThreshold", 0.425D, 0.05D, 0.9D);
 
-
-
-        WORLD_TERRAIN_INFLUENCE = b
+        ISLAND_SCALE = b
             .comment(
-                "How strongly the world own terrain noise shapes the islands.",
-                "Islands read density from the same noise router that builds the ground, sampled from a distant",
-                "place at normal ground height and lifted into the sky, so with a terrain mod installed they",
-                "inherit its character rather than looking like noise of our own.",
-                "This costs generation time, and a heavy terrain mod costs more. Set to 0 to skip it and fall",
-                "back to the built-in island shaping, which generates noticeably faster."
+                "Horizontal scale of the island noise. Smaller values stretch it into larger landmasses,",
+                "larger values break the sky into smaller, more numerous islands."
             )
-            .translation("barrenskies.configuration.worldTerrainInfluence")
-            .defineInRange("worldTerrainInfluence", 1.0D, 0.0D, 2.0D);
+            .translation("barrenskies.configuration.islandScale")
+            .defineInRange("islandScale", 0.85D, 0.1D, 4.0D);
+
+        ALTITUDE_COOLING = b
+            .comment(
+                "Whether biomes get colder with height, as they do in vanilla Minecraft.",
+                "Vanilla subtracts about 0.0125 of temperature per 10 blocks above Y 80, which at sky island",
+                "altitude is enough to freeze every biome regardless of what it is. Turning this off keeps a",
+                "jungle island a jungle no matter how high it sits, at the cost of no snow-capped peaks."
+            )
+            .translation("barrenskies.configuration.altitudeCooling")
+            .define("altitudeCooling", false);
 
 
 

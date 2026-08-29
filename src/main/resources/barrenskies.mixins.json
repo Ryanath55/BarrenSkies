@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.barrenskies.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "barrenskies.refmap.json",
+  "mixins": [
+    "BiomeTemperatureMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
