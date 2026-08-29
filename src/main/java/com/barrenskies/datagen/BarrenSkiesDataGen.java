@@ -59,13 +59,14 @@ public final class BarrenSkiesDataGen {
     );
 
     /**
-     * Biomes whose surface rules are gated to ground altitude and so cannot work on a floating island.
+     * Biomes kept off the sky islands.
      *
-     * <p>Terralith gates yellowstone on a vertical gradient that is false above Y 115, so at island height
-     * the branch placing its gravel and dirt never runs and the whole biome comes out as bare calcite.
-     * Nothing here can change how another mod writes its rules, so the biome is simply kept off islands.
+     * <p>Empty on purpose. Yellowstone was here because Terralith gates its gravel on a check that is
+     * false above Y 115, leaving the biome as bare calcite at island height. Lifting the surface rules to
+     * island altitude addresses that at the source, so denying the biome is no longer the fix. Anything
+     * that still cannot work up there belongs here.
      */
-    private static final List<String> GROUND_ALTITUDE_ONLY = List.of("terralith:yellowstone");
+    private static final List<String> GROUND_ALTITUDE_ONLY = List.of();
 
     private static final class BiomeTagProvider extends TagsProvider<Biome> {
         BiomeTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {

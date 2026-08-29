@@ -117,7 +117,6 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             islandNoise,
             ridgeNoise,
             detailNoise,
-            router.ridges(),
             BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
             Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
             BarrenSkiesConfig.ISLAND_LAYERS.get(),
@@ -153,7 +152,15 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             settings.defaultBlock(),
             settings.defaultFluid(),
             withIslands,
-            settings.surfaceRule(),
+            // Surface rules are written against ground level heights, so at island altitude they take their
+            // wrong branch. Lifted copies apply above the island floor; the ground keeps the originals.
+            BarrenSkiesConfig.LIFT_SURFACE_RULES.get()
+                ? LiftedSurfaceRules.liftAbove(
+                    settings.surfaceRule(),
+                    BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.LAYER_REACH,
+                    settings.seaLevel()
+                )
+                : settings.surfaceRule(),
             settings.spawnTarget(),
             settings.seaLevel(),
             settings.disableMobGeneration(),

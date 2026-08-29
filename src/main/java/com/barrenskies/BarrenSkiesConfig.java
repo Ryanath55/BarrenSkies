@@ -11,6 +11,7 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD;
     public static final ModConfigSpec.DoubleValue ISLAND_SCALE;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
+    public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
     public static final ModConfigSpec.DoubleValue ARID_TEMPERATURE_MIN;
     public static final ModConfigSpec.BooleanValue ARID_REQUIRES_NO_RAIN;
@@ -91,6 +92,19 @@ public final class BarrenSkiesConfig {
 
 
 
+
+        LIFT_SURFACE_RULES = b
+            .comment(
+                "Whether to raise the height limits inside surface rules so they also work on sky islands.",
+                "Surface rules are written against absolute heights: Terralith gates its yellowstone gravel",
+                "on a check that is false above Y 115, so at island altitude that biome comes out as bare",
+                "calcite. This shifts a copy of those heights up to the island band and applies it there,",
+                "leaving the ground with the originals.",
+                "Turn it off if a terrain mod surfaces oddly on islands and you would rather have the",
+                "unaltered rules."
+            )
+            .translation("barrenskies.configuration.liftSurfaceRules")
+            .define("liftSurfaceRules", true);
 
         OCEAN_CONTINENTALNESS_MAX = b
             .comment(

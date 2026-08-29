@@ -96,7 +96,6 @@ public final class SkyIslandDensity {
         Holder<NormalNoise.NoiseParameters> islands,
         Holder<NormalNoise.NoiseParameters> ridges,
         Holder<NormalNoise.NoiseParameters> detail,
-        DensityFunction worldRidges,
         int bandBottom,
         int bandTop,
         int layerCount,
@@ -108,14 +107,11 @@ public final class SkyIslandDensity {
         // Half our own noise, half the ridge field the world itself uses. Blending it in means island
         // terraces follow the same lines the ground terrain does, so a terrain mod shapes the islands as
         // well as the ground rather than only supplying their biomes.
+        // Our own ridge noise alone. Blending the world ridge field in here narrowed the spread of the
+        // combined value, so it rarely crossed the narrow bands that cut the terraces, and the islands went
+        // back to being smooth domes. Two noises averaged are flatter than either.
         DensityFunction ridgeField = DensityFunctions.flatCache(
-            DensityFunctions.add(
-                DensityFunctions.mul(
-                    DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges),
-                    DensityFunctions.constant(0.5D)
-                ),
-                DensityFunctions.mul(worldRidges, DensityFunctions.constant(0.5D))
-            )
+            DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges)
         );
 
         List<DensityFunction> layers = new ArrayList<>(layerCount);
