@@ -30,6 +30,16 @@ public final class SkyIslandDensityFunction implements DensityFunction.SimpleFun
     );
     public static final KeyDispatchDataCodec<SkyIslandDensityFunction> CODEC = new KeyDispatchDataCodec<>(CODEC_INSTANCE);
 
+    /**
+     * Density reported where there is no island.
+     *
+     * <p>This has to be far below zero, not just below it. The island field is combined with the world
+     * density by taking the greater of the two, so a value near zero here would raise genuine open air up
+     * against the solid threshold, and the interpolation between noise cells would then cross into rock all
+     * over the world. That is what turned the ground into spikes and ramps.
+     */
+    private static final double AIR = -64.0D;
+
     /** Beyond this distance from the island band there is nothing to compute, so skip the column work. */
     private static final int BAND_MARGIN = 96;
     /** Columns cached per worker thread. A chunk touches only a handful, so this comfortably covers one. */
@@ -78,12 +88,12 @@ public final class SkyIslandDensityFunction implements DensityFunction.SimpleFun
     public double compute(DensityFunction.FunctionContext context) {
         int y = context.blockY();
         if (y < this.settings.bandBottom() - BAND_MARGIN || y > this.settings.bandTop() + BAND_MARGIN) {
-            return -1.0D;
+            return AIR;
         }
 
         ColumnData data = this.columnAt(context.blockX(), context.blockZ());
         if (data.column() == null) {
-            return -1.0D;
+            return AIR;
         }
         // Island rock is shaped by the world own terrain density, read from a distant place at normal
         // ground height and lifted here, so islands inherit the character of whatever mod shapes the ground.
@@ -93,7 +103,9 @@ public final class SkyIslandDensityFunction implements DensityFunction.SimpleFun
         double d = this.layout.density(
             data.column(), context.blockX(), y, context.blockZ(), data.profile(), data.envelope(), lifted
         );
-        return d;
+        // Air well outside an island is pushed down to the same floor, so only the surface band competes
+        // with the world density at all.
+        return d <= -1.0D ? AIR : d;
     }
 
     private ColumnData columnAt(int x, int z) {
@@ -130,7 +142,7 @@ public final class SkyIslandDensityFunction implements DensityFunction.SimpleFun
 
     @Override
     public double minValue() {
-        return -1.0D;
+        return AIR;
     }
 
     @Override

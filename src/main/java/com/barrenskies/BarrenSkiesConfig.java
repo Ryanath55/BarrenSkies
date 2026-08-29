@@ -30,18 +30,25 @@ public final class BarrenSkiesConfig {
 
         SKY_ISLAND_BOTTOM = b
             .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.",
-                "Terrain generates up to Y 320, so keep this above 360 or island undersides will clip tall peaks.")
+                "Ground terrain reaches Y 320, so keep this above 360 or island undersides will punch through peaks.")
             .translation("barrenskies.configuration.skyIslandBottom")
             .defineInRange("skyIslandBottom", 380, 0, 950);
 
         SKY_ISLAND_TOP = b
             .comment(
-                "Highest Y an island may sit at. Islands are spread evenly between the floor and this,",
-                "so a wide gap gives genuinely layered altitudes and a narrow one puts them all on one plane.",
-                "The world is 1024 blocks tall (Y -64 to 959), so there is room to go high."
+                "Highest Y an island may sit at. Islands are spread evenly between the floor and this, so a wide",
+                "gap gives genuinely layered altitudes and a narrow one puts them all on one plane.",
+                "Minecraft lowers biome temperature with height, by about 0.0125 per 10 blocks above Y 80.",
+                "That is not something this mod controls, and it means altitude decides how frozen an island",
+                "looks far more than its biome does:",
+                "  up to Y 360 : nearly every biome looks as it should",
+                "  Y 360-560   : cool biomes turn snowy, warm ones are fine (default top is 520)",
+                "  above Y 600 : everything freezes over, including jungles",
+                "The band is squeezed from both sides: the ground reaches Y 320 and must be cleared, while",
+                "temperature freezes everything above about Y 600. That, not world height, is what limits it."
             )
             .translation("barrenskies.configuration.skyIslandTop")
-            .defineInRange("skyIslandTop", 840, 0, 950);
+            .defineInRange("skyIslandTop", 520, 0, 950);
 
 
         ISLAND_DENSITY = b
