@@ -54,10 +54,13 @@ public final class BarrenSkiesConfig {
             .comment(
                 "How many overlapping layers of islands to stack between the floor and the ceiling.",
                 "Layers are combined by taking whichever is denser, so islands from different layers overlap",
-                "and merge rather than averaging their heights. More layers means a busier, more vertical sky."
+                "and merge rather than averaging their heights. More layers means a busier, more vertical sky.",
+                "Islands reach 64 blocks either side of their layer, so layers about 48 apart overlap heavily",
+                "and fuse into broad flat-topped masses. Spread the same band over fewer layers and they",
+                "separate into individual domes. With the default band, four layers gives roughly that spacing."
             )
             .translation("barrenskies.configuration.islandLayers")
-            .defineInRange("islandLayers", 3, 1, 8);
+            .defineInRange("islandLayers", 4, 1, 8);
 
         ISLAND_THRESHOLD = b
             .comment(

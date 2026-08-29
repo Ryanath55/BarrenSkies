@@ -117,6 +117,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             islandNoise,
             ridgeNoise,
             detailNoise,
+            router.ridges(),
             BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
             Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
             BarrenSkiesConfig.ISLAND_LAYERS.get(),

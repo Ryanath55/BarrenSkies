@@ -100,6 +100,7 @@ public final class SkyIslandDensity {
         Holder<NormalNoise.NoiseParameters> islands,
         Holder<NormalNoise.NoiseParameters> ridges,
         Holder<NormalNoise.NoiseParameters> detail,
+        DensityFunction worldRidges,
         int bandBottom,
         int bandTop,
         int layerCount,
@@ -108,8 +109,17 @@ public final class SkyIslandDensity {
     ) {
         // Ridge noise varies the island surface across a landmass. Cached per column, since it has no
         // height component and would otherwise be recomputed for every block in the column.
+        // Half our own noise, half the ridge field the world itself uses. Blending it in means island
+        // terraces follow the same lines the ground terrain does, so a terrain mod shapes the islands as
+        // well as the ground rather than only supplying their biomes.
         DensityFunction ridgeField = DensityFunctions.flatCache(
-            DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges)
+            DensityFunctions.add(
+                DensityFunctions.mul(
+                    DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges),
+                    DensityFunctions.constant(0.5D)
+                ),
+                DensityFunctions.mul(worldRidges, DensityFunctions.constant(0.5D))
+            )
         );
 
         // Three dimensional detail, which is what turns a smooth dome into terrain with faces and ledges.
