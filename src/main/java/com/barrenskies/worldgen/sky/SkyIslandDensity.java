@@ -45,7 +45,7 @@ public final class SkyIslandDensity {
      * worth a whole layer reach in blocks, so a value that looks modest here moves the surface a long way
      * and can carve a thin island away entirely.
      */
-    private static final double DETAIL_STRENGTH = 0.14D;
+    private static final double DETAIL_STRENGTH = 0.05D;
 
     /** Extra reach given to the biome mask so island edges are never left reporting the ground biome. */
     public static final double BIOME_MASK_MARGIN = 0.08D;
@@ -109,7 +109,7 @@ public final class SkyIslandDensity {
         // Ridge noise varies the island surface across a landmass. Cached per column, since it has no
         // height component and would otherwise be recomputed for every block in the column.
         DensityFunction ridgeField = DensityFunctions.flatCache(
-            DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 0.25D, ridges)
+            DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges)
         );
 
         // Three dimensional detail, which is what turns a smooth dome into terrain with faces and ledges.
@@ -176,40 +176,49 @@ public final class SkyIslandDensity {
         DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         DensityFunctions.Spline.Coordinate inland = new DensityFunctions.Spline.Coordinate(Holder.direct(mask));
 
+        // Ridge decides whether a stretch of island is tall or low, and the bands are deliberately narrow:
+        // the height collapses across a tenth of ridge, which is what cuts terraces and cliff lines across a
+        // landmass. Sweeping gently across the whole ridge range instead, as this did before, can only
+        // produce smooth domes however the rest is tuned. Values follow Skylands over the Sea.
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
-        // Low ridge values give flatter islands, high ones give taller and more broken ones.
-        // Every peak must stay below one. The fade gradient bottoms out at minus one, so an offset of one or
-        // more leaves the column solid however high it goes, which is what grew pillars to the world ceiling.
-        spline.addPoint(-1.0F, thickness(inland, upper, upper ? 0.52F : 0.58F));
-        spline.addPoint(-0.2F, thickness(inland, upper, upper ? 0.70F : 0.66F));
-        spline.addPoint(0.3F, thickness(inland, upper, upper ? 0.90F : 0.74F));
-        spline.addPoint(1.0F, thickness(inland, upper, upper ? 0.66F : 0.62F));
+        spline.addPoint(-0.35F, tall(inland, upper));
+        spline.addPoint(-0.25F, low(inland, upper));
+        spline.addPoint(0.25F, low(inland, upper));
+        spline.addPoint(0.35F, tall(inland, upper));
         return DensityFunctions.spline(spline.build());
     }
 
+    /** The taller island profile: rises steeply from the shore, peaks a third of the way in, then falls. */
+    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> tall(
+        DensityFunctions.Spline.Coordinate inland, boolean upper
+    ) {
+        return upper ? profile(inland, 0.633F, 0.770F, 0.311F) : profile(inland, 0.600F, 0.700F, 0.300F);
+    }
+
+    /** The low profile, which peaks almost at the shore and stays flat inland. */
+    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> low(
+        DensityFunctions.Spline.Coordinate inland, boolean upper
+    ) {
+        return upper ? profile(inland, 0.340F, 0.240F, 0.130F) : profile(inland, 0.300F, 0.220F, 0.120F);
+    }
+
     /**
-     * How thick the island is as a function of how far inland the column is.
-     *
-     * <p>Zero at the shoreline so land tapers out rather than ending in a wall, rising quickly just inland,
-     * then easing off so the middle of an island is broad rather than domed.
+     * Island thickness as a function of how far inland a column is, given the height it reaches at three
+     * points. Zero at the shoreline so land tapers out rather than ending in a wall.
      */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> thickness(
-        DensityFunctions.Spline.Coordinate inland, boolean upper, float peak
+    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> profile(
+        DensityFunctions.Spline.Coordinate inland, float near, float peak, float inner
     ) {
         return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
             // Well outside an island the offset is firmly negative, so open sky stays open rather than
             // resting on the threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.08F, -0.25F, 1.6F)
-            // Shape follows Skylands over the Sea: rise steeply from the shore, peak early, then fall away
-            // again deeper in. Holding a plateau across the interior instead is what made islands read as
-            // domes, since a flat top with rounded edges is exactly that.
             .addPoint(0.0F, 0.0F, 2.0F)
-            .addPoint(0.145F, peak * 0.82F, upper ? 0.9F : 0.7F)
-            .addPoint(0.316F, peak, upper ? -0.63F : -0.45F)
-            .addPoint(0.418F, peak * 0.40F, 0.0F)
-            .addPoint(0.75F, peak * (upper ? 0.30F : 0.45F), 0.0F)
+            .addPoint(0.145F, near, 0.191F)
+            .addPoint(0.316F, peak, -0.627F)
+            .addPoint(0.418F, inner, 0.0F)
             .build();
     }
 }

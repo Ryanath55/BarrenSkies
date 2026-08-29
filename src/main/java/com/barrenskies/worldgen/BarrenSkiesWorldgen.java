@@ -97,7 +97,7 @@ public final class BarrenSkiesWorldgen {
         );
         context.register(
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES,
-            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-8, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
         );
         // Finer and fully three dimensional, so it can undercut a face rather than only raise or lower it.
         context.register(
