@@ -150,7 +150,13 @@ public class LayeredBiomeSource extends BiomeSource {
         Set<Holder<Biome>> barren = new LinkedHashSet<>();
         lower.stream().skip(caves.size()).forEach(entry -> barren.add(entry.getSecond()));
         java.util.function.Predicate<Holder<Biome>> suitsSky =
-            biome -> !barren.contains(biome) && !isWater(biome) && !biome.is(BiomeTags.IS_BEACH);
+            biome -> !barren.contains(biome)
+                && !isWater(biome)
+                && !biome.is(BiomeTags.IS_BEACH)
+                // Rivers need a valley to run along and a sea to reach. As an island they are just a
+                // misnamed patch of ground.
+                && !biome.is(BiomeTags.IS_RIVER)
+                && !biome.is(BarrenSkiesTags.DENIED_IN_SKY);
 
         // The island pool is remapped the same way the surface is, rather than filtered. Dropping entries
         // would leave holes for the nearest surviving entry to fill, which is how deserts and oceans kept

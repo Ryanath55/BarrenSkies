@@ -58,6 +58,15 @@ public final class BarrenSkiesDataGen {
         "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean", "terralith:frozen_cliffs"
     );
 
+    /**
+     * Biomes whose surface rules are gated to ground altitude and so cannot work on a floating island.
+     *
+     * <p>Terralith gates yellowstone on a vertical gradient that is false above Y 115, so at island height
+     * the branch placing its gravel and dirt never runs and the whole biome comes out as bare calcite.
+     * Nothing here can change how another mod writes its rules, so the biome is simply kept off islands.
+     */
+    private static final List<String> GROUND_ALTITUDE_ONLY = List.of("terralith:yellowstone");
+
     private static final class BiomeTagProvider extends TagsProvider<Biome> {
         BiomeTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {
             super(output, Registries.BIOME, lookup, BarrenSkies.MOD_ID, existingFileHelper);
@@ -69,6 +78,9 @@ public final class BarrenSkiesDataGen {
             TagAppender<Biome> denied = this.tag(BarrenSkiesTags.DENIED_ON_SURFACE);
             SKY_BIOMES.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
             UNWANTED_ON_SURFACE.forEach(id -> denied.addOptional(ResourceLocation.parse(id)));
+
+            TagAppender<Biome> deniedInSky = this.tag(BarrenSkiesTags.DENIED_IN_SKY);
+            GROUND_ALTITUDE_ONLY.forEach(id -> deniedInSky.addOptional(ResourceLocation.parse(id)));
 
             TagAppender<Biome> neverPainted = this.tag(BarrenSkiesTags.NEVER_PAINTED);
             NEVER_PAINTED.forEach(id -> neverPainted.addOptional(ResourceLocation.parse(id)));

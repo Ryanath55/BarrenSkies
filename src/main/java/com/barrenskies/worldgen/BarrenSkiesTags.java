@@ -16,6 +16,14 @@ public final class BarrenSkiesTags {
      */
     public static final TagKey<Biome> NEVER_PAINTED = biomeTag("never_painted");
 
+    /**
+     * Biomes kept off the sky islands.
+     *
+     * <p>Separate from the surface deny list, and not its opposite: a biome can be wrong on the barren
+     * ground and wrong on an island for entirely different reasons.
+     */
+    public static final TagKey<Biome> DENIED_IN_SKY = biomeTag("denied_in_sky");
+
     private static TagKey<Biome> biomeTag(String name) {
         return TagKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath(BarrenSkies.MOD_ID, name));
     }

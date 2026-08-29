@@ -60,7 +60,7 @@ public final class BarrenSkiesConfig {
                 "separate into individual domes. With the default band, four layers gives roughly that spacing."
             )
             .translation("barrenskies.configuration.islandLayers")
-            .defineInRange("islandLayers", 4, 1, 8);
+            .defineInRange("islandLayers", 3, 1, 8);
 
         ISLAND_THRESHOLD = b
             .comment(

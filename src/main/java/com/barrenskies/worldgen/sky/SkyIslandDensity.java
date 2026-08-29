@@ -35,17 +35,13 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_DETAIL = noise("island_detail");
 
     /**
-     * How far the 3D detail noise can move the island surface, as a fraction of a layer reach.
+     * No three dimensional detail noise is applied to the island surface.
      *
-     * <p>Without this the surface is purely a height field over smooth noise, which can only produce
-     * domes however the splines are shaped. This is the term that cuts cliffs, ledges and overhangs into
-     * them, and it is the same trick the game uses on its own ground.
-     *
-     * <p>Kept small on purpose. The noise itself ranges to about plus or minus two, and a density unit is
-     * worth a whole layer reach in blocks, so a value that looks modest here moves the surface a long way
-     * and can carve a thin island away entirely.
+     * <p>Adding it was an attempt to break up domes, but the domes came from a smooth ridge spline and
+     * adding noise only made the tops lumpy. Skylands over the Sea uses none at all, and its island tops
+     * read as ordinary flat Minecraft ground because the surface is a smooth height field over very
+     * low frequency noise. Left as a note so it is not reintroduced.
      */
-    private static final double DETAIL_STRENGTH = 0.05D;
 
     /** Extra reach given to the biome mask so island edges are never left reporting the ground biome. */
     public static final double BIOME_MASK_MARGIN = 0.08D;
@@ -122,11 +118,6 @@ public final class SkyIslandDensity {
             )
         );
 
-        // Three dimensional detail, which is what turns a smooth dome into terrain with faces and ledges.
-        DensityFunction detailField = DensityFunctions.mul(
-            DensityFunctions.noise(detail, 1.0D, 0.6D), DensityFunctions.constant(DETAIL_STRENGTH)
-        );
-
         List<DensityFunction> layers = new ArrayList<>(layerCount);
         int spacing = layerCount > 1 ? (bandTop - bandBottom) / (layerCount - 1) : 0;
 
@@ -156,9 +147,7 @@ public final class SkyIslandDensity {
             DensityFunction fadeDown = DensityFunctions.add(
                 DensityFunctions.yClampedGradient(centre - LAYER_REACH, centre, -1.0D, 0.0D), bottom
             );
-            // Detail is added after the two fades meet, so it cuts into the top and the underside alike.
-            // Far from any island the fades are strongly negative, so it cannot strand rock in open sky.
-            layers.add(DensityFunctions.add(DensityFunctions.min(fadeUp, fadeDown), detailField));
+            layers.add(DensityFunctions.min(fadeUp, fadeDown));
         }
 
         DensityFunction combined = layers.getFirst();
