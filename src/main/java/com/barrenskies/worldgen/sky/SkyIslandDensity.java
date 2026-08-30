@@ -50,6 +50,13 @@ public final class SkyIslandDensity {
     private static final double SCALE = 24.0D;
 
     /**
+     * How sharply cave carving is faded out towards the island surface. Carving reaches full strength once
+     * the island density passes one over this, so a larger number leaves a thinner skin of solid rock.
+     * Ten works out at roughly four blocks.
+     */
+    private static final double SKIN_FADE = 10.0D;
+
+    /**
      * Vertical distance from a layer to where its rock has completely faded out.
      *
      * <p>Islands therefore reach this far below the configured floor, which the biome side has to allow
@@ -169,7 +176,7 @@ public final class SkyIslandDensity {
         }
 
         if (com.barrenskies.BarrenSkiesConfig.ISLAND_CAVES.get()) {
-            combined = DensityFunctions.add(combined, caves(caveNoise));
+            combined = DensityFunctions.add(combined, caves(caveNoise, combined));
         }
         // Scaled up before being handed to the world. The island field naturally sits within about plus or
         // minus one, but it is combined with the world density by taking the greater of the two, and open
@@ -188,8 +195,12 @@ public final class SkyIslandDensity {
      * zero cuts a connected tunnel network rather than isolated pockets. Nothing is subtracted anywhere
      * else. The technique is from Skylands over the Sea, whose own carver is capped at Y 80 and so never
      * reaches an island: their island caves come entirely from the density like this.
+     *
+     * <p>Nothing here sets how wide a tunnel is. The width is how far the noise travels while it is inside
+     * the band this spline dips through, which is a property of the noise wavelength, so the spline and the
+     * cave noise parameters have to be read together. See the note on the cave noise for why that matters.
      */
-    private static DensityFunction caves(Holder<NormalNoise.NoiseParameters> caveNoise) {
+    private static DensityFunction caves(Holder<NormalNoise.NoiseParameters> caveNoise, DensityFunction island) {
         DensityFunctions.Spline.Coordinate field = new DensityFunctions.Spline.Coordinate(
             Holder.direct(DensityFunctions.noise(caveNoise, 1.0D, 1.0D))
         );
@@ -200,7 +211,17 @@ public final class SkyIslandDensity {
                 .addPoint(0.05F, 0.1F, 0.0F)
                 .build();
         // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
-        return DensityFunctions.min(DensityFunctions.interpolated(DensityFunctions.spline(carve)), DensityFunctions.zero());
+        DensityFunction cut = DensityFunctions.min(
+            DensityFunctions.interpolated(DensityFunctions.spline(carve)), DensityFunctions.zero()
+        );
+
+        // Faded out through the outer skin of the island. Without this a tunnel opens a mouth wherever it
+        // passes near the surface, and it opens the widest one exactly there: the cave wall sits where the
+        // carve cancels the island density, so as that density falls away towards the surface the tunnel
+        // flares out to the full width of the carved band. Multiplying by the island density holds the last
+        // few blocks of rock closed, so a mouth only appears where a tunnel genuinely runs out through it.
+        DensityFunction skin = DensityFunctions.mul(island, DensityFunctions.constant(SKIN_FADE)).clamp(0.0D, 1.0D);
+        return DensityFunctions.mul(cut, skin);
     }
 
     /**

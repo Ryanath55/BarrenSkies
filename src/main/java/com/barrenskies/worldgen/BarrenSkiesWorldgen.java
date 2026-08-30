@@ -105,10 +105,17 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-4, 1.0D, 0.6D, 0.3D)
         );
-        // Cave tunnels are cut where this passes through zero, so its wavelength is the tunnel spacing.
+        // Cave tunnels are cut where this passes through zero, so its wavelength sets both the tunnel
+        // spacing and, less obviously, the tunnel width. The carving spline dips over a fixed band of noise
+        // values, and how many blocks the noise takes to cross that band is what the tunnel diameter
+        // actually is. A short wavelength crosses it in a block or two, which is narrower than a noise cell,
+        // and terrain narrower than a cell cannot survive the interpolation between cell corners: it comes
+        // out as flat, axis-aligned faces. These are the parameters of minecraft:gravel, which is the noise
+        // Skylands over the Sea uses for the same carve, and at 256 and 128 blocks it crosses the band over
+        // several blocks instead. The proportion of rock removed is unchanged; only the scale of it moves.
         context.register(
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_CAVES,
-            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-6, 1.0D, 1.0D, 1.0D)
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-8, 1.0D, 1.0D)
         );
     }
 

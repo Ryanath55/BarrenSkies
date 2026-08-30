@@ -1,0 +1,18 @@
+{
+  "replace": false,
+  "values": [
+    { "id": "#minecraft:is_ocean", "required": false },
+    { "id": "#minecraft:is_deep_ocean", "required": false },
+    { "id": "#minecraft:is_beach", "required": false },
+    { "id": "#minecraft:is_river", "required": false },
+    { "id": "#minecraft:is_badlands", "required": false },
+    { "id": "minecraft:desert", "required": false },
+    { "id": "minecraft:savanna", "required": false },
+    { "id": "minecraft:savanna_plateau", "required": false },
+    { "id": "minecraft:windswept_savanna", "required": false },
+    { "id": "minecraft:stony_shore", "required": false },
+    { "id": "#c:is_desert", "required": false },
+    { "id": "#c:is_badlands", "required": false },
+    { "id": "#c:is_savanna", "required": false }
+  ]
+}
