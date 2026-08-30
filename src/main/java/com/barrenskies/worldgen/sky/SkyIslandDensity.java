@@ -179,10 +179,10 @@ public final class SkyIslandDensity {
         DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
-        spline.addPoint(-0.35F, top(inland, 0.633F, 0.770F, 0.311F));
-        spline.addPoint(-0.25F, top(inland, 0.340F, 0.240F, 0.130F));
-        spline.addPoint(0.25F, top(inland, 0.340F, 0.240F, 0.130F));
-        spline.addPoint(0.35F, top(inland, 0.633F, 0.770F, 0.311F));
+        spline.addPoint(-0.35F, top(inland, 0.700F, 0.770F, 0.580F));
+        spline.addPoint(-0.25F, top(inland, 0.290F, 0.260F, 0.210F));
+        spline.addPoint(0.25F, top(inland, 0.290F, 0.260F, 0.210F));
+        spline.addPoint(0.35F, top(inland, 0.700F, 0.770F, 0.580F));
         return DensityFunctions.spline(spline.build());
     }
 
@@ -201,20 +201,23 @@ public final class SkyIslandDensity {
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.08F, -0.25F, 1.6F)
             .addPoint(0.0F, 0.0F, 0.0F)
-            .addPoint(0.05F, 0.300F, 0.0F)
-            .addPoint(0.1F, 0.450F, 0.0F)
-            .addPoint(0.2F, 0.600F, 0.0F)
-            .addPoint(0.3F, 0.700F, 0.0F)
-            .addPoint(0.4F, 0.800F, 0.0F)
-            .addPoint(0.5F, 0.850F, 0.0F)
-            .addPoint(0.6F, 0.950F, 0.0F)
-            .addPoint(0.7F, 0.9875F, 0.0F)
+            .addPoint(0.02F, 0.350F, 0.0F)
+            .addPoint(0.05F, 0.550F, 0.0F)
+            .addPoint(0.10F, 0.750F, 0.0F)
+            .addPoint(0.18F, 0.880F, 0.0F)
+            .addPoint(0.30F, 0.960F, 0.0F)
+            .addPoint(0.50F, 0.9875F, 0.0F)
             .build();
     }
 
     /**
-     * The upper surface: rises steeply from the shore, peaks about a third of the way in, then eases back
-     * so the interior is a broad flat deck rather than a mound.
+     * The upper surface: a steep rise at the very shore, then a broad flat deck.
+     *
+     * <p>The mask positions matter more than the heights. Measured over a million columns, half of all island
+     * ground sits below mask 0.13 and only one percent passes 0.6. Skylands over the Sea puts its rise
+     * across 0 to 0.32 and only flattens past 0.42, which against this distribution means nearly every
+     * column is still climbing, and a surface that climbs everywhere is a dome. The rise is compressed into
+     * the first 0.05 so it reads as a cliff at the shoreline, and everything beyond is deck.
      */
     private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> top(
         DensityFunctions.Spline.Coordinate inland, float near, float peak, float inner
@@ -223,11 +226,11 @@ public final class SkyIslandDensity {
             // Firmly negative outside an island, so open sky stays open rather than resting on the
             // threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
-            .addPoint(-0.08F, -0.25F, 1.6F)
-            .addPoint(0.0F, 0.0F, 2.0F)
-            .addPoint(0.145F, near, 0.191F)
-            .addPoint(0.316F, peak, -0.627F)
-            .addPoint(0.418F, inner, 0.0F)
+            .addPoint(-0.05F, -0.20F, 2.0F)
+            .addPoint(0.0F, 0.0F, 9.0F)
+            .addPoint(0.05F, near, 1.2F)
+            .addPoint(0.13F, peak, -0.5F)
+            .addPoint(0.25F, inner, 0.0F)
             .build();
     }
 }
