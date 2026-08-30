@@ -653,7 +653,7 @@ function evalSpline(sp, ctx) {
 var DEFAULTS = {
   seed: 20260830,
   originX: 0, originZ: 0,
-  yaw: 0.6, camY: 566, camDist: 430,
+  yaw: 0.6, camY: 552, camDist: 330,
 
   bandBottom: 380, bandTop: 520, layers: 3,
   threshold: 0.425, hScale: 0.85, reach: 44,
@@ -779,6 +779,20 @@ function extra3d(x, y, z) {
   if (S.detailOn) v += noises.detail.get(x, y, z) * S.detailStrength;
   if (S.t3On) v += noises.t3.get(x, y * S.t3Squash, z) * S.t3Strength;
   return v;
+}
+
+/* Is one layer solid at this point, caves included. Used by the grid march, which walks a layer from
+   top to bottom collecting runs of rock — that is what makes caves and arches visible in 3D rather
+   than being hidden inside a solid block between the layer's top and bottom. */
+function solidAt(c, y, R, x, z) {
+  var v = layerValue(c, y, R) + extra3d(x, y, z);
+  if (S.cavesOn) {
+    CAVE_CTX.cave = noises.cave.get(x, y, z);
+    var cut = evalSpline(CAVE_SP, CAVE_CTX);
+    if (cut > 0) cut = 0;
+    v += cut * clamp(v * S.skinFade, 0, 1);
+  }
+  return v > 0;
 }
 
 /* The island field at one point, exactly as the density function composes it. */
@@ -993,12 +1007,18 @@ function renderMap(step) {
 
 var GRID = null, gridKey = "";
 
-function buildGrid() {
-  var N = 176, cell = 3, L = S.layers;
+var MAXSPANS = 10;
+
+function buildGrid(fast) {
+  var N = 224, cell = 2, L = S.layers;
+  // Marching costs about the same as the old two-ended search, so it only pays to skip it while a
+  // slider is actually moving. Without caves or landform noise the height field is exact anyway.
+  var march = !fast && (S.cavesOn || S.t3On);
   var key = [noiseKey, S.originX, S.originZ, S.threshold, S.hScale, S.reach, S.bandBottom, S.bandTop,
              L, S.ridgeOn, S.bowlOn, S.shoreAt, S.deckAt, S.bandInner, S.bandOuter,
              S.deckLow, S.deckHigh, S.deckOuter, S.bowl,
-             S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash].join("|");
+             S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash,
+             S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
@@ -1013,63 +1033,85 @@ function buildGrid() {
   // dropping the column, because a missed column would read as a hole punched in an island.
   var slack = S.t3On
     ? Math.ceil((S.t3Strength + (S.detailOn ? S.detailStrength : 0)) * R * 2) + 4
-    : 0;
-  var top = new Float32Array(N * N * L);
-  var bot = new Float32Array(N * N * L);
-  var lit = new Float32Array(N * N * L);
-  var has = new Uint8Array(N * N * L);
+    : 4;
+  var sTop = new Float32Array(N * N * MAXSPANS);
+  var sBot = new Float32Array(N * N * MAXSPANS);
+  var count = new Uint8Array(N * N);
+  var surf = new Float32Array(N * N);
+  var lit = new Float32Array(N * N);
   var x0 = S.originX - N * cell / 2, z0 = S.originZ - N * cell / 2;
 
   for (var j = 0; j < N; j++) {
     for (var i = 0; i < N; i++) {
       var wx = x0 + i * cell, wz = z0 + j * cell;
       var cols = column(wx, wz, deck, bowl);
-      for (var k = 0; k < L; k++) {
-        var c = cols[k], o = (j * N + i) * L + k;
+      var ci = j * N + i, n = 0, best = -Infinity;
+
+      // Highest layer first. A column that overflows the span budget then loses its lowest rock,
+      // which is the least of it you can see. Filling upwards would drop the island you are
+      // standing on and keep the one underneath.
+      for (var k = L - 1; k >= 0; k--) {
+        var c = cols[k];
         if (c.top <= 0) continue;
         var t0 = c.centre + c.top * R;
         var b0 = c.centre - Math.max(0, c.bottom) * R;
-        if (!slack) { has[o] = 1; top[o] = t0; bot[o] = b0; continue; }
 
-        var y, found = -1;
-        for (y = Math.ceil(t0 + slack); y >= t0 - slack; y--) {
-          if (layerValue(c, y, R) + extra3d(wx, y, wz) > 0) { found = y; break; }
+        if (!march) {
+          if (n < MAXSPANS) { sTop[ci * MAXSPANS + n] = t0; sBot[ci * MAXSPANS + n] = b0; n++; }
+          if (t0 > best) best = t0;
+          continue;
         }
-        if (found < 0) { has[o] = 1; top[o] = t0; bot[o] = b0; continue; }
-        var low = found;
-        for (y = Math.floor(b0 - slack); y <= b0 + slack; y++) {
-          if (layerValue(c, y, R) + extra3d(wx, y, wz) > 0) { low = y; break; }
+
+        // Walk down through the layer collecting runs of rock. Every gap on the way is a cave, an
+        // arch or a window, and each run becomes a span of its own that the camera can see between.
+        var yHi = Math.ceil(t0 + slack), yLo = Math.floor(b0 - slack), open = false, runTop = 0, y;
+        for (y = yHi; y >= yLo; y--) {
+          if (solidAt(c, y, R, wx, wz)) {
+            if (!open) { open = true; runTop = y; if (y > best) best = y; }
+          } else if (open) {
+            open = false;
+            if (n < MAXSPANS) { sTop[ci * MAXSPANS + n] = runTop; sBot[ci * MAXSPANS + n] = y + 1; n++; }
+          }
         }
-        has[o] = 1; top[o] = found; bot[o] = low;
+        if (open && n < MAXSPANS) { sTop[ci * MAXSPANS + n] = runTop; sBot[ci * MAXSPANS + n] = yLo; n++; }
       }
+      count[ci] = n;
+      surf[ci] = n ? best : NaN;
     }
   }
-  // Relief shading from the slope of each deck, done once here rather than per frame.
-  for (var jj = 1; jj < N - 1; jj++) {
-    for (var ii = 1; ii < N - 1; ii++) {
-      for (var kk = 0; kk < L; kk++) {
-        var idx = (jj * N + ii) * L + kk;
-        if (!has[idx]) continue;
-        var a = (jj * N + ii + 1) * L + kk, b = (jj * N + ii - 1) * L + kk;
-        var cN = ((jj + 1) * N + ii) * L + kk, dS = ((jj - 1) * N + ii) * L + kk;
-        var gx = (has[a] ? top[a] : top[idx]) - (has[b] ? top[b] : top[idx]);
-        var gz = (has[cN] ? top[cN] : top[idx]) - (has[dS] ? top[dS] : top[idx]);
-        lit[idx] = clamp(1 + (gx * 0.6 + gz * 0.35) / 20, 0.6, 1.4);
-      }
+
+  // Lambert shading off the real surface normal. The old version scaled slope so gently that a deck
+  // with a block or two of undulation came out one flat colour, which is exactly the variation that
+  // most needs to be visible.
+  var lx = -0.55, ly = 0.68, lz = -0.48;
+  var ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
+  lx /= ll; ly /= ll; lz /= ll;
+  for (var jj = 0; jj < N; jj++) {
+    for (var ii = 0; ii < N; ii++) {
+      var q = jj * N + ii;
+      if (isNaN(surf[q])) continue;
+      var ge = (ii < N - 1 && !isNaN(surf[q + 1])) ? surf[q + 1] : surf[q];
+      var gw = (ii > 0 && !isNaN(surf[q - 1])) ? surf[q - 1] : surf[q];
+      var gs = (jj < N - 1 && !isNaN(surf[q + N])) ? surf[q + N] : surf[q];
+      var gn = (jj > 0 && !isNaN(surf[q - N])) ? surf[q - N] : surf[q];
+      var dx = (ge - gw) / (2 * cell), dz = (gs - gn) / (2 * cell);
+      var len = Math.sqrt(dx * dx + 1 + dz * dz);
+      lit[q] = clamp(0.40 + 0.80 * Math.max(0, (-dx * lx + ly - dz * lz) / len), 0.32, 1.32);
     }
   }
-  GRID = { N: N, cell: cell, L: L, x0: x0, z0: z0, top: top, bot: bot, has: has, lit: lit };
+  GRID = { N: N, cell: cell, x0: x0, z0: z0, sTop: sTop, sBot: sBot,
+           count: count, surf: surf, lit: lit };
 }
 
-function render3D(coarse) {
-  buildGrid();
-  var W = coarse ? 168 : 300;
+function render3D(coarse, keepGrid) {
+  if (!keepGrid || !GRID) buildGrid(coarse);
+  var W = coarse ? 180 : 420;
   var H = Math.round(W * 0.66);
   isoc.width = W; isoc.height = H;
   var img = ictx.createImageData(W, H);
   var d = img.data;
 
-  var g = GRID, N = g.N, L = g.L;
+  var g = GRID, N = g.N;
   var yaw = S.yaw, sinA = Math.sin(yaw), cosA = Math.cos(yaw);
   var camX = S.originX - sinA * S.camDist;
   var camZ = S.originZ - cosA * S.camDist;
@@ -1103,26 +1145,34 @@ function render3D(coarse) {
       var gi = ((wx - g.x0) / g.cell) | 0, gj = ((wz - g.z0) / g.cell) | 0;
       wx += stepX; wz += stepZ;
       if (gi < 1 || gj < 1 || gi >= N - 1 || gj >= N - 1) continue;
-      var base = (gj * N + gi) * L;
-      for (var k = 0; k < L; k++) {
-        var o = base + k;
-        if (!g.has[o]) continue;
-        var yT = (horizon + (camY - g.top[o]) * vScale * invd) | 0;
-        var yB = (horizon + (camY - g.bot[o]) * vScale * invd) | 0;
+      var ci = gj * N + gi, ns = g.count[ci];
+      if (!ns) continue;
+      var colSurf = g.surf[ci], colLit = g.lit[ci];
+      var side = 0.64 + 0.12 * dither(gi, gj);
+
+      for (var k = 0; k < ns; k++) {
+        var o = ci * MAXSPANS + k;
+        var spanTop = g.sTop[o];
+        var yT = (horizon + (camY - spanTop) * vScale * invd) | 0;
+        var yB = (horizon + (camY - g.sBot[o]) * vScale * invd) | 0;
         if (yB < yT) { var sw = yT; yT = yB; yB = sw; }
         if (yB < 0 || yT >= H) continue;
         // A deck seen at a shallow angle is only one pixel of span per sample, so drawn naively it
         // breaks into speckle. This is how far the same height moves on screen between one distance
         // sample and the next, which is exactly the gap the top face has to cover to read as ground.
         var capTo = yT + Math.max(1, Math.round(
-          Math.abs(camY - g.top[o]) * vScale * stepDist / (dist * dist)));
+          Math.abs(camY - spanTop) * vScale * stepDist / (dist * dist)));
         if (yT < 0) yT = 0;
         if (yB >= H) yB = H - 1;
-        var side = 0.64 + 0.12 * dither(gi, gj);
+        // Only the topmost span of a column is open sky above it. Anything lower is the floor of a
+        // cave, so it takes rock rather than grass and sits in shadow.
+        var open = spanTop >= colSurf - 0.5;
+        var capCol = open ? PAL.grass : PAL.stone;
+        var capShade = open ? colLit : 0.40;
         for (var py = yT; py <= yB; py++) {
           var isCap = py < capTo;
-          var c = isCap ? PAL.grass : PAL.stone;
-          var s = (isCap ? g.lit[o] : side) * fog;
+          var c = isCap ? capCol : PAL.stone;
+          var s = (isCap ? capShade : side) * fog;
           var p = (py * W + sx) * 4;
           d[p] = clamp(c[0] * s, 0, 255);
           d[p + 1] = clamp(c[1] * s, 0, 255);
@@ -1204,21 +1254,26 @@ function showStats() {
    Scheduling
    ===================================================================== */
 
-var view = "iso", pending = false, coarse = false;
+var view = "iso", pending = false, coarse = false, camOnly = false;
 
-function request(isCoarse) {
+/* camOnly marks a change that moved the camera and nothing else. The span grid is by far the most
+   expensive thing here and does not depend on where the camera is, so those changes reuse it
+   outright — that is what keeps orbiting instant while a terrain edit rebuilds. Coalesced requests
+   can only ever downgrade the flag, never restore it. */
+function request(isCoarse, cam) {
   coarse = isCoarse;
-  if (pending) return;
+  if (pending) { if (!cam) camOnly = false; return; }
   pending = true;
+  camOnly = !!cam;
   requestAnimationFrame(function () {
     pending = false;
     var t0 = performance.now();
     buildNoises();
     CAVE_SP = caveSpline();
-    if (view === "iso") render3D(coarse);
+    if (view === "iso") render3D(coarse, camOnly);
     else if (view === "section") renderSection(coarse ? 3 : 1);
     else renderMap(coarse ? 3 : 1);
-    if (!coarse) computeStats();
+    if (!coarse && !camOnly) computeStats();
     document.getElementById("perf").textContent = Math.round(performance.now() - t0) + " ms";
     writeOut();
     save();
@@ -1231,13 +1286,14 @@ function request(isCoarse) {
 
 var GROUPS = [
   {
-    num: "◉", title: "Camera", open: false,
+    num: "◉", title: "Camera", open: false, cam: true,
     blurb: "Only changes the view, never the terrain. None of it is exported.",
     items: [
       { k: "yaw", label: "Orbit", min: -3.14159, max: 3.14159, step: 0.02, dp: 2 },
       { k: "camY", label: "Eye height (Y)", min: 150, max: 800, step: 2, dp: 0,
         note: "Below an island you see its underside, above it you see the deck. Level with the band shows both at once." },
-      { k: "camDist", label: "Distance", min: 180, max: 640, step: 5, dp: 0 }
+      { k: "camDist", label: "Distance", min: 120, max: 520, step: 5, dp: 0,
+        note: "Closer shows more detail, since the terrain grid is a fixed number of samples across." }
     ]
   },
   {
@@ -1344,7 +1400,7 @@ function el(tag, cls, txt) {
   return e;
 }
 
-function slider(label, get, set, min, max, step, dp, note) {
+function slider(label, get, set, min, max, step, dp, note, cam) {
   var row = el("div", "row");
   var head = el("div", "rowhead");
   head.appendChild(el("span", "rowlabel", label));
@@ -1358,9 +1414,9 @@ function slider(label, get, set, min, max, step, dp, note) {
   r.addEventListener("input", function () {
     set(parseFloat(r.value));
     val.textContent = (+get()).toFixed(dp);
-    request(true);
+    request(true, cam);
   });
-  r.addEventListener("change", function () { request(false); });
+  r.addEventListener("change", function () { request(false, cam); });
   row.appendChild(r);
   if (note) row.appendChild(el("div", "rownote", note));
   refreshers.push(function () { r.value = get(); val.textContent = (+get()).toFixed(dp); });
@@ -1468,7 +1524,7 @@ function build() {
       }
 
       body.appendChild(slider(it.label, function () { return S[it.k]; },
-        function (v) { S[it.k] = v; }, it.min, it.max, it.step, it.dp, it.note));
+        function (v) { S[it.k] = v; }, it.min, it.max, it.step, it.dp, it.note, g.cam));
     });
 
     d.appendChild(body);
@@ -1599,7 +1655,7 @@ document.getElementById("btnReset").addEventListener("click", function () {
 });
 
 /* drag to travel */
-function dragging(node, onMove) {
+function dragging(node, onMove, cam) {
   var active = false, lx = 0, ly = 0;
   node.addEventListener("pointerdown", function (e) {
     active = true; lx = e.clientX; ly = e.clientY;
@@ -1610,14 +1666,14 @@ function dragging(node, onMove) {
     var dx = e.clientX - lx, dy = e.clientY - ly;
     lx = e.clientX; ly = e.clientY;
     onMove(dx, dy);
-    request(true);
+    request(true, cam);
   });
   function end(e) {
     if (!active) return;
     active = false;
     try { node.releasePointerCapture(e.pointerId); } catch (err) {}
     refreshAll();
-    request(false);
+    request(false, cam);
   }
   node.addEventListener("pointerup", end);
   node.addEventListener("pointercancel", end);
@@ -1626,7 +1682,7 @@ dragging(document.getElementById("paneIso"), function (dx, dy) {
   S.yaw += dx * 0.006;
   S.camY = clamp(S.camY - dy * 1.6,
     S.bandBottom - S.reach * 3.2, S.bandTop + S.reach * 3.2);
-});
+}, true);
 dragging(document.getElementById("paneSection"), function (dx) {
   S.originX -= Math.round(dx * (SEC_W / Math.max(1, terrain.clientWidth)) * 2);
 });
