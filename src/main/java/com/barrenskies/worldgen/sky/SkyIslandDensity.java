@@ -145,11 +145,18 @@ public final class SkyIslandDensity {
             // Rock fades out going up from the layer centre, and again going down, each offset by how far
             // inland the column is. Taking the lesser of the two means a column is only solid where both
             // agree, which is what gives an island a top and an underside.
+            //
+            // Each fade runs to twice the reach and to minus two rather than stopping at minus one. It
+            // passes through the same value at the island surface, so the shape is unchanged, but it keeps
+            // falling below instead of levelling off. Stopping at minus one left the density at the deepest
+            // point of the bowl sitting a hundredth below solid, since the bowl offset reaches 0.9875, and
+            // anything that nudged it - detail noise, or interpolation against a neighbour - tipped it over.
+            // That is what strung trails of blobs from the underside of an island down towards the ground.
             DensityFunction fadeUp = DensityFunctions.add(
-                DensityFunctions.yClampedGradient(centre, centre + reach, 0.0D, -1.0D), top
+                DensityFunctions.yClampedGradient(centre, centre + reach * 2, 0.0D, -2.0D), top
             );
             DensityFunction fadeDown = DensityFunctions.add(
-                DensityFunctions.yClampedGradient(centre - reach, centre, -1.0D, 0.0D), bottom
+                DensityFunctions.yClampedGradient(centre - reach * 2, centre, -2.0D, 0.0D), bottom
             );
             layers.add(DensityFunctions.add(DensityFunctions.min(fadeUp, fadeDown), detailField));
         }
