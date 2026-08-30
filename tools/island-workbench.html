@@ -180,10 +180,11 @@ body {
   background: var(--void);
   touch-action: none;
 }
-.stage canvas { display: block; width: 100%; }
-#terrain, #map { image-rendering: pixelated; image-rendering: crisp-edges; }
-#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.pane { display: none; position: relative; }
+.frame { position: relative; margin: 0 auto; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+#terrain, #map, #iso { image-rendering: pixelated; image-rendering: crisp-edges; }
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+.pane { display: none; }
 .pane.on { display: block; }
 
 .readout {
@@ -258,7 +259,7 @@ details.grp[open] > summary .chev { transform: rotate(90deg); }
 .grpbody { padding: 2px 12px 13px; border-top: 1px solid var(--rule-soft); }
 
 /* ---------- rows ---------- */
-.row { padding: 9px 0 3px; }
+.row { padding: 14px 0 6px; }
 .row + .row { border-top: 1px dotted var(--rule-soft); }
 .rowhead {
   display: flex;
@@ -266,28 +267,28 @@ details.grp[open] > summary .chev { transform: rotate(90deg); }
   justify-content: space-between;
   gap: 10px;
 }
-.rowlabel { font-size: 13.5px; color: var(--ink-2); }
+.rowlabel { font-size: 14.5px; color: var(--ink-2); }
 .rowval {
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 13.5px;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   background: var(--panel-2);
   border: 1px solid var(--rule-soft);
   border-radius: 2px;
-  padding: 1px 6px;
-  min-width: 62px;
+  padding: 2px 7px;
+  min-width: 66px;
   text-align: right;
 }
-.rownote { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; line-height: 1.35; }
+.rownote { font-size: 12.5px; color: var(--ink-dim); margin-top: 7px; line-height: 1.45; }
 
 input[type=range] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
   background: transparent;
-  margin: 8px 0 2px;
-  height: 26px;
+  margin: 12px 0 4px;
+  height: 32px;
   cursor: pointer;
 }
 input[type=range]::-webkit-slider-runnable-track {
@@ -298,10 +299,10 @@ input[type=range]::-moz-range-track {
 }
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 22px; height: 22px; margin-top: -9.5px;
+  width: 26px; height: 26px; margin-top: -11.5px;
   border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--panel);
+  border: 4px solid var(--panel);
   box-shadow: 0 0 0 1px var(--rule);
 }
 input[type=range]::-moz-range-thumb {
@@ -313,14 +314,35 @@ input[type=range]::-moz-range-thumb {
 }
 input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
 
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-.pair .sub {
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.pair .row, .amps .row { padding-top: 8px; border-top: 0; }
+
+/* Octave arrays and bowl points are long and rarely touched, so they fold away. */
+details.sub {
+  margin: 12px 0 2px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  background: var(--panel-2);
+}
+details.sub > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 11px;
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ink-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  align-items: center;
 }
+details.sub > summary::-webkit-details-marker { display: none; }
+details.sub > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+details.sub[open] > summary { border-bottom: 1px solid var(--rule-soft); color: var(--ink-2); }
+.subbody { padding: 2px 11px 12px; }
 
 .toggle {
   display: flex;
@@ -354,8 +376,8 @@ input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offs
 .toggle input:checked + .switch::after { transform: translateX(18px); }
 .toggle input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.amps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 14px; }
-@media (min-width: 460px) { .amps { grid-template-columns: repeat(3, 1fr); } }
+.amps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; }
+@media (min-width: 560px) { .amps { grid-template-columns: repeat(3, 1fr); } }
 
 /* ---------- export ---------- */
 .export { margin-top: 14px; }
@@ -419,20 +441,23 @@ footer.note strong { color: var(--ink-2); font-weight: 600; }
       <div class="viewer">
         <div class="viewer-bar">
           <div class="seg" role="group" aria-label="View">
-            <button type="button" id="tabSection" aria-pressed="true">Cross-section</button>
+            <button type="button" id="tabIso" aria-pressed="true">3D</button>
+            <button type="button" id="tabSection" aria-pressed="false">Section</button>
             <button type="button" id="tabMap" aria-pressed="false">Map</button>
           </div>
           <span class="bar-spacer"></span>
-          <button type="button" class="ghost" id="btnJump">New location</button>
+          <button type="button" class="ghost" id="btnJump">New spot</button>
         </div>
 
         <div class="stage">
-          <div class="pane on" id="paneSection">
-            <canvas id="terrain"></canvas>
-            <canvas id="overlay"></canvas>
+          <div class="pane on" id="paneIso">
+            <div class="frame"><canvas id="iso"></canvas></div>
+          </div>
+          <div class="pane" id="paneSection">
+            <div class="frame"><canvas id="terrain"></canvas><canvas id="overlay"></canvas></div>
           </div>
           <div class="pane" id="paneMap">
-            <canvas id="map"></canvas>
+            <div class="frame"><canvas id="map"></canvas></div>
           </div>
         </div>
 
@@ -628,6 +653,7 @@ function evalSpline(sp, ctx) {
 var DEFAULTS = {
   seed: 20260830,
   originX: 0, originZ: 0,
+  yaw: 0.6, camY: 566, camDist: 430,
 
   bandBottom: 380, bandTop: 520, layers: 3,
   threshold: 0.425, hScale: 0.85, reach: 44,
@@ -762,9 +788,24 @@ var SEC_W = 288;
 var terrain = document.getElementById("terrain");
 var overlay = document.getElementById("overlay");
 var mapc = document.getElementById("map");
+var isoc = document.getElementById("iso");
 var tctx = terrain.getContext("2d");
 var octx = overlay.getContext("2d");
 var mctx = mapc.getContext("2d");
+var ictx = isoc.getContext("2d");
+
+/* Fit a view into the stage without letting it eat the whole phone screen — the controls need room
+   to be usable, and a viewer taller than about half the viewport leaves none. */
+function fitFrame(frame, aspect) {
+  var maxW = stageWidth();
+  var maxH = Math.round(window.innerHeight * (window.innerWidth >= 940 ? 0.68 : 0.46));
+  var w = maxW, h = Math.round(w * aspect);
+  if (h > maxH) { h = maxH; w = Math.round(h / aspect); }
+  frame.style.width = w + "px";
+  frame.style.height = h + "px";
+  return { w: w, h: h };
+}
+function frameOf(canvas) { return canvas.parentNode; }
 
 function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -825,14 +866,12 @@ function renderSection(step) {
     }
   }
   tctx.putImageData(img, 0, 0);
-  terrain.style.height = Math.round(stageWidth() * (H / W)) + "px";
-  drawOverlay(yr);
+  drawOverlay(yr, fitFrame(frameOf(terrain), H / W));
 }
 
-function drawOverlay(yr) {
+function drawOverlay(yr, box) {
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
-  var w = stageWidth(), h = parseFloat(terrain.style.height) || 240;
-  overlay.style.height = h + "px";
+  var w = box.w, h = box.h;
   overlay.width = Math.round(w * dpr); overlay.height = Math.round(h * dpr);
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, w, h);
@@ -919,7 +958,139 @@ function renderMap(step) {
     }
   }
   mctx.putImageData(img, 0, 0);
-  mapc.style.height = stageWidth() + "px";
+  fitFrame(frameOf(mapc), 1);
+}
+
+/* =====================================================================
+   3D view
+
+   Rotating should not mean recomputing noise, so the field is sampled once into a grid of vertical
+   spans — one per layer per column, top and bottom — and the camera then works entirely off that.
+   Panning or changing a parameter rebuilds the grid; turning the camera does not.
+   ===================================================================== */
+
+var GRID = null, gridKey = "";
+
+function buildGrid() {
+  var N = 176, cell = 3, L = S.layers;
+  var key = [noiseKey, S.originX, S.originZ, S.threshold, S.hScale, S.reach, S.bandBottom, S.bandTop,
+             L, S.ridgeOn, S.bowlOn, S.shoreAt, S.deckAt, S.bandInner, S.bandOuter,
+             S.deckLow, S.deckHigh, S.deckOuter, S.bowl].join("|");
+  if (key === gridKey && GRID) return;
+  gridKey = key;
+
+  var deck = deckSpline(), bowl = bowlSpline();
+  var top = new Float32Array(N * N * L);
+  var bot = new Float32Array(N * N * L);
+  var lit = new Float32Array(N * N * L);
+  var has = new Uint8Array(N * N * L);
+  var x0 = S.originX - N * cell / 2, z0 = S.originZ - N * cell / 2;
+
+  for (var j = 0; j < N; j++) {
+    for (var i = 0; i < N; i++) {
+      var cols = column(x0 + i * cell, z0 + j * cell, deck, bowl);
+      for (var k = 0; k < L; k++) {
+        var c = cols[k], o = (j * N + i) * L + k;
+        if (c.top > 0) {
+          has[o] = 1;
+          top[o] = c.centre + c.top * S.reach;
+          bot[o] = c.centre - Math.max(0, c.bottom) * S.reach;
+        }
+      }
+    }
+  }
+  // Relief shading from the slope of each deck, done once here rather than per frame.
+  for (var jj = 1; jj < N - 1; jj++) {
+    for (var ii = 1; ii < N - 1; ii++) {
+      for (var kk = 0; kk < L; kk++) {
+        var idx = (jj * N + ii) * L + kk;
+        if (!has[idx]) continue;
+        var a = (jj * N + ii + 1) * L + kk, b = (jj * N + ii - 1) * L + kk;
+        var cN = ((jj + 1) * N + ii) * L + kk, dS = ((jj - 1) * N + ii) * L + kk;
+        var gx = (has[a] ? top[a] : top[idx]) - (has[b] ? top[b] : top[idx]);
+        var gz = (has[cN] ? top[cN] : top[idx]) - (has[dS] ? top[dS] : top[idx]);
+        lit[idx] = clamp(1 + (gx * 0.6 + gz * 0.35) / 20, 0.6, 1.4);
+      }
+    }
+  }
+  GRID = { N: N, cell: cell, L: L, x0: x0, z0: z0, top: top, bot: bot, has: has, lit: lit };
+}
+
+function render3D(coarse) {
+  buildGrid();
+  var W = coarse ? 168 : 300;
+  var H = Math.round(W * 0.66);
+  isoc.width = W; isoc.height = H;
+  var img = ictx.createImageData(W, H);
+  var d = img.data;
+
+  var g = GRID, N = g.N, L = g.L;
+  var yaw = S.yaw, sinA = Math.sin(yaw), cosA = Math.cos(yaw);
+  var camX = S.originX - sinA * S.camDist;
+  var camZ = S.originZ - cosA * S.camDist;
+  var camY = S.camY;
+  var fov = 0.62;
+  // Vertical scale matched to the horizontal so the view is geometrically honest: a slab that is
+  // twice as wide as it is thick has to read that way, or judging shape from it is worthless.
+  var vScale = W / (2 * fov);
+  // The grid only reaches half its own width from the origin, so there is nothing to draw nearer
+  // than the camera's distance minus that. Starting closer just wastes passes.
+  var reachOut = g.N * g.cell * 0.5;
+  var dNear = Math.max(24, S.camDist - reachOut);
+  var dFar = S.camDist + reachOut;
+  // Keep the island band centred whatever height the eye is at, so raising and lowering the camera
+  // changes the angle you see it from rather than sliding the subject off the top of the frame.
+  var bandMid = (S.bandBottom + S.bandTop) / 2;
+  var horizon = H * 0.5 - (S.camY - bandMid) * vScale / S.camDist;
+
+  var dist = dFar;
+  while (dist > dNear) {
+    var invd = 1 / dist;
+    var stepDist = Math.max(0.9, dist * 0.011);
+    var ccx = camX + sinA * dist, ccz = camZ + cosA * dist;
+    var halfX = cosA * dist * fov, halfZ = -sinA * dist * fov;
+    var wx = ccx - halfX, wz = ccz - halfZ;
+    var stepX = (2 * halfX) / W, stepZ = (2 * halfZ) / W;
+    // Aerial perspective: distance drains contrast so overlapping islands separate.
+    var fog = 1 - 0.28 * clamp((dist - dNear) / (dFar - dNear), 0, 1);
+
+    for (var sx = 0; sx < W; sx++) {
+      var gi = ((wx - g.x0) / g.cell) | 0, gj = ((wz - g.z0) / g.cell) | 0;
+      wx += stepX; wz += stepZ;
+      if (gi < 1 || gj < 1 || gi >= N - 1 || gj >= N - 1) continue;
+      var base = (gj * N + gi) * L;
+      for (var k = 0; k < L; k++) {
+        var o = base + k;
+        if (!g.has[o]) continue;
+        var yT = (horizon + (camY - g.top[o]) * vScale * invd) | 0;
+        var yB = (horizon + (camY - g.bot[o]) * vScale * invd) | 0;
+        if (yB < yT) { var sw = yT; yT = yB; yB = sw; }
+        if (yB < 0 || yT >= H) continue;
+        // A deck seen at a shallow angle is only one pixel of span per sample, so drawn naively it
+        // breaks into speckle. This is how far the same height moves on screen between one distance
+        // sample and the next, which is exactly the gap the top face has to cover to read as ground.
+        var capTo = yT + Math.max(1, Math.round(
+          Math.abs(camY - g.top[o]) * vScale * stepDist / (dist * dist)));
+        if (yT < 0) yT = 0;
+        if (yB >= H) yB = H - 1;
+        var side = 0.64 + 0.12 * dither(gi, gj);
+        for (var py = yT; py <= yB; py++) {
+          var isCap = py < capTo;
+          var c = isCap ? PAL.grass : PAL.stone;
+          var s = (isCap ? g.lit[o] : side) * fog;
+          var p = (py * W + sx) * 4;
+          d[p] = clamp(c[0] * s, 0, 255);
+          d[p + 1] = clamp(c[1] * s, 0, 255);
+          d[p + 2] = clamp(c[2] * s, 0, 255);
+          d[p + 3] = 255;
+        }
+      }
+    }
+    dist -= stepDist;
+  }
+
+  ictx.putImageData(img, 0, 0);
+  fitFrame(frameOf(isoc), H / W);
 }
 
 /* The readout has to describe the whole world, not the patch on screen. At the default scale one
@@ -988,7 +1159,7 @@ function showStats() {
    Scheduling
    ===================================================================== */
 
-var view = "section", pending = false, coarse = false;
+var view = "iso", pending = false, coarse = false;
 
 function request(isCoarse) {
   coarse = isCoarse;
@@ -999,7 +1170,8 @@ function request(isCoarse) {
     var t0 = performance.now();
     buildNoises();
     CAVE_SP = caveSpline();
-    if (view === "section") renderSection(coarse ? 3 : 1);
+    if (view === "iso") render3D(coarse);
+    else if (view === "section") renderSection(coarse ? 3 : 1);
     else renderMap(coarse ? 3 : 1);
     if (!coarse) computeStats();
     document.getElementById("perf").textContent = Math.round(performance.now() - t0) + " ms";
@@ -1013,6 +1185,16 @@ function request(isCoarse) {
    ===================================================================== */
 
 var GROUPS = [
+  {
+    num: "◉", title: "Camera", open: false,
+    blurb: "Only changes the view, never the terrain. None of it is exported.",
+    items: [
+      { k: "yaw", label: "Orbit", min: -3.14159, max: 3.14159, step: 0.02, dp: 2 },
+      { k: "camY", label: "Eye height (Y)", min: 150, max: 800, step: 2, dp: 0,
+        note: "Below an island you see its underside, above it you see the deck. Level with the band shows both at once." },
+      { k: "camDist", label: "Distance", min: 180, max: 640, step: 5, dp: 0 }
+    ]
+  },
   {
     num: "01", title: "Mask", open: true,
     blurb: "A flat 2D noise field. Where it clears the threshold, there is an island.",
@@ -1028,7 +1210,7 @@ var GROUPS = [
     ]
   },
   {
-    num: "02", title: "Layers", open: true,
+    num: "02", title: "Layers", open: false,
     blurb: "Islands are built once per layer and combined by taking whichever is denser, so they overlap rather than average.",
     items: [
       { k: "layers", label: "Layer count", min: 1, max: 8, step: 1, dp: 0 },
@@ -1039,7 +1221,7 @@ var GROUPS = [
     ]
   },
   {
-    num: "03", title: "Deck", open: true,
+    num: "03", title: "Deck", open: false,
     blurb: "The upper surface: a steep rise at the shore, then a level deck that never falls back inland.",
     items: [
       { type: "toggle", k: "ridgeOn", label: "Ridge terracing",
@@ -1143,6 +1325,19 @@ function toggle(label, k, note) {
   return row;
 }
 
+/* A nested collapsible for the long, rarely-touched arrays. */
+function fold(label) {
+  var outer = document.createElement("details");
+  outer.className = "sub";
+  var sum = document.createElement("summary");
+  sum.appendChild(el("span", null, label));
+  sum.appendChild(el("span", null, "▾"));
+  outer.appendChild(sum);
+  var body = el("div", "subbody");
+  outer.appendChild(body);
+  return { outer: outer, body: body };
+}
+
 function build() {
   GROUPS.forEach(function (g) {
     var d = document.createElement("details");
@@ -1162,8 +1357,7 @@ function build() {
       if (it.type === "toggle") { body.appendChild(toggle(it.label, it.k, it.note)); return; }
 
       if (it.type === "amps") {
-        var row = el("div", "row");
-        row.appendChild(el("div", "rowlabel", it.label));
+        var row = fold(it.label);
         var grid = el("div", "amps");
         var octKey = it.k === "islandsAmp" ? "islandsOct"
                    : it.k === "ridgeAmp" ? "ridgeOct"
@@ -1175,9 +1369,9 @@ function build() {
               function (v) { S[it.k][idx] = v; }, it.min, it.max, it.step, 1));
           })(i);
         });
-        row.appendChild(grid);
-        if (it.note) row.appendChild(el("div", "rownote", it.note));
-        body.appendChild(row);
+        row.body.appendChild(grid);
+        if (it.note) row.body.appendChild(el("div", "rownote", it.note));
+        body.appendChild(row.outer);
         return;
       }
 
@@ -1196,21 +1390,21 @@ function build() {
       }
 
       if (it.type === "bowl") {
+        var f = fold("Bowl profile — " + S.bowl.length + " points");
         S.bowl.forEach(function (_, i) {
           var brow = el("div", "row");
-          brow.appendChild(el("div", "rowlabel", "Bowl point " + (i + 1)));
+          brow.appendChild(el("div", "rowlabel", "Point " + (i + 1)));
           var bg = el("div", "pair");
           bg.appendChild(slider("at mask", function () { return S.bowl[i][0]; },
             function (v) { S.bowl[i][0] = v; }, 0.005, 1.0, 0.005, 3));
           bg.appendChild(slider("depth", function () { return S.bowl[i][1]; },
             function (v) { S.bowl[i][1] = v; }, 0, 1.6, 0.005, 4));
           brow.appendChild(bg);
-          if (i === S.bowl.length - 1) {
-            brow.appendChild(el("div", "rownote",
-              "Half of all island ground sits below mask 0.13, so where these points sit matters far more than how deep they go."));
-          }
-          body.appendChild(brow);
+          f.body.appendChild(brow);
         });
+        f.body.appendChild(el("div", "rownote",
+          "Half of all island ground sits below mask 0.13, so where these points sit matters far more than how deep they go."));
+        body.appendChild(f.outer);
         return;
       }
 
@@ -1276,18 +1470,23 @@ function load() {
   } catch (e) { return false; }
 }
 
+var HINTS = {
+  iso: "Drag sideways to orbit, up and down to raise or lower the eye. Drop the eye below an island to look at its underside.",
+  section: "Drag to travel. The dashed lines are the layer centres — islands hang below and stack above them.",
+  map: "Island tops from above, shaded by slope. Drag to travel."
+};
+
 function setView(v) {
   view = v;
-  document.getElementById("paneSection").classList.toggle("on", v === "section");
-  document.getElementById("paneMap").classList.toggle("on", v === "map");
-  document.getElementById("tabSection").setAttribute("aria-pressed", String(v === "section"));
-  document.getElementById("tabMap").setAttribute("aria-pressed", String(v === "map"));
-  document.getElementById("hint").textContent = v === "section"
-    ? "Drag the view to travel. The dashed lines are the layer centres — islands hang below and stack above them."
-    : "Looking down on the island tops, shaded by slope. Drag to travel; the readout below is measured over what you can see.";
+  ["iso", "section", "map"].forEach(function (k) {
+    document.getElementById("pane" + k.charAt(0).toUpperCase() + k.slice(1)).classList.toggle("on", v === k);
+    document.getElementById("tab" + k.charAt(0).toUpperCase() + k.slice(1)).setAttribute("aria-pressed", String(v === k));
+  });
+  document.getElementById("hint").textContent = HINTS[v];
   request(false);
 }
 
+document.getElementById("tabIso").addEventListener("click", function () { setView("iso"); });
 document.getElementById("tabSection").addEventListener("click", function () { setView("section"); });
 document.getElementById("tabMap").addEventListener("click", function () { setView("map"); });
 
@@ -1355,11 +1554,17 @@ function dragging(node, onMove) {
     if (!active) return;
     active = false;
     try { node.releasePointerCapture(e.pointerId); } catch (err) {}
+    refreshAll();
     request(false);
   }
   node.addEventListener("pointerup", end);
   node.addEventListener("pointercancel", end);
 }
+dragging(document.getElementById("paneIso"), function (dx, dy) {
+  S.yaw += dx * 0.006;
+  S.camY = clamp(S.camY - dy * 1.6,
+    S.bandBottom - S.reach * 3.2, S.bandTop + S.reach * 3.2);
+});
 dragging(document.getElementById("paneSection"), function (dx) {
   S.originX -= Math.round(dx * (SEC_W / Math.max(1, terrain.clientWidth)) * 2);
 });
@@ -1385,7 +1590,7 @@ var restored = load();
 build();
 refreshAll();
 if (!restored) findLand(600);
-setView("section");
+setView("iso");
 
 })();
 </script>
