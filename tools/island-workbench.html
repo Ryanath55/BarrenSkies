@@ -673,6 +673,8 @@ var DEFAULTS = {
 
   detailOn: true, detailStrength: 0.03, detailOct: -4, detailAmp: [1, 0.6, 0.3],
 
+  t3On: false, t3Strength: 0.18, t3Oct: -6, t3Squash: 0.5, t3Amp: [1, 0.5, 0.25],
+
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
   caveBand: 0.05, caveDepth: -1.5, skinFade: 10
 };
@@ -683,7 +685,7 @@ function clone(o) { return JSON.parse(JSON.stringify(o)); }
 var noises = {}, noiseKey = "";
 function buildNoises() {
   var key = [S.seed, S.islandsOct, S.islandsAmp, S.ridgeOct, S.ridgeAmp,
-             S.detailOct, S.detailAmp, S.caveOct, S.caveAmp].join("|");
+             S.detailOct, S.detailAmp, S.caveOct, S.caveAmp, S.t3Oct, S.t3Amp].join("|");
   if (key === noiseKey) return;
   noiseKey = key;
   var b = S.seed >>> 0;
@@ -691,6 +693,7 @@ function buildNoises() {
   noises.ridge   = new Normal(b, "island_ridges", S.ridgeOct, S.ridgeAmp);
   noises.detail  = new Normal(b, "island_detail", S.detailOct, S.detailAmp);
   noises.cave    = new Normal(b, "island_caves", S.caveOct, S.caveAmp);
+  noises.t3      = new Normal(b, "island_terrain", S.t3Oct, S.t3Amp);
 }
 
 /* top(): steep rise at the shore, then a deck that never falls back. */
@@ -760,17 +763,32 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 var CAVE_SP = null;
 var CAVE_CTX = { cave: 0 };
 
+/* One layer's contribution at a height: rock where the fade from above and the fade from below agree. */
+function layerValue(c, y, R) {
+  var dy = (y - c.centre) / R;
+  var up = c.top - clamp(dy, 0, 2);
+  var down = c.bottom + clamp(dy, -2, 0);
+  return up < down ? up : down;
+}
+
+/* The 3D terms added on top of the height field. These are what stop an island being a pure surface:
+   fine detail for texture, and the landform noise for the overhangs and ledges vanilla terrain gets
+   from its own base 3D noise. Both are added after the layers combine, so they apply equally to all. */
+function extra3d(x, y, z) {
+  var v = 0;
+  if (S.detailOn) v += noises.detail.get(x, y, z) * S.detailStrength;
+  if (S.t3On) v += noises.t3.get(x, y * S.t3Squash, z) * S.t3Strength;
+  return v;
+}
+
 /* The island field at one point, exactly as the density function composes it. */
 function density(cols, x, y, z) {
   var R = S.reach, best = -1e9, i;
   for (i = 0; i < cols.length; i++) {
-    var c = cols[i], dy = (y - c.centre) / R;
-    var up = c.top - clamp(dy, 0, 2);
-    var down = c.bottom + clamp(dy, -2, 0);
-    var v = up < down ? up : down;
+    var v = layerValue(cols[i], y, R);
     if (v > best) best = v;
   }
-  if (S.detailOn) best += noises.detail.get(x, y, z) * S.detailStrength;
+  best += extra3d(x, y, z);
   if (S.cavesOn) {
     CAVE_CTX.cave = noises.cave.get(x, y, z);
     var cut = evalSpline(CAVE_SP, CAVE_CTX);
@@ -932,6 +950,10 @@ function renderMap(step) {
         if (c.top > 0) {
           any = true;
           var t = c.centre + c.top * S.reach;
+          // The map is a shaded overview, so rather than search for the surface it displaces the
+          // height field by the 3D terms sampled at it. That is exact wherever the terrain is a
+          // surface at all, and only misses where it overhangs, which a top-down view cannot show.
+          t += extra3d(x, t, z) * S.reach;
           if (t > top) top = t;
         }
       }
@@ -975,11 +997,23 @@ function buildGrid() {
   var N = 176, cell = 3, L = S.layers;
   var key = [noiseKey, S.originX, S.originZ, S.threshold, S.hScale, S.reach, S.bandBottom, S.bandTop,
              L, S.ridgeOn, S.bowlOn, S.shoreAt, S.deckAt, S.bandInner, S.bandOuter,
-             S.deckLow, S.deckHigh, S.deckOuter, S.bowl].join("|");
+             S.deckLow, S.deckHigh, S.deckOuter, S.bowl,
+             S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
   var deck = deckSpline(), bowl = bowlSpline();
+  var R = S.reach;
+  // With only a height field the surface solves in closed form. The landform noise breaks that -- the
+  // surface stops being a function of x and z at all -- so once it is on we have to go and look for
+  // the rock. The search is bounded: a term of amplitude A can only move the surface by A reaches,
+  // so it only ever scans that far either side of where the height field said the surface would be.
+  // Normal noise peaks well above one, so the window is sized against roughly twice the nominal
+  // amplitude. A search that still comes up empty falls back to the height field rather than
+  // dropping the column, because a missed column would read as a hole punched in an island.
+  var slack = S.t3On
+    ? Math.ceil((S.t3Strength + (S.detailOn ? S.detailStrength : 0)) * R * 2) + 4
+    : 0;
   var top = new Float32Array(N * N * L);
   var bot = new Float32Array(N * N * L);
   var lit = new Float32Array(N * N * L);
@@ -988,14 +1022,25 @@ function buildGrid() {
 
   for (var j = 0; j < N; j++) {
     for (var i = 0; i < N; i++) {
-      var cols = column(x0 + i * cell, z0 + j * cell, deck, bowl);
+      var wx = x0 + i * cell, wz = z0 + j * cell;
+      var cols = column(wx, wz, deck, bowl);
       for (var k = 0; k < L; k++) {
         var c = cols[k], o = (j * N + i) * L + k;
-        if (c.top > 0) {
-          has[o] = 1;
-          top[o] = c.centre + c.top * S.reach;
-          bot[o] = c.centre - Math.max(0, c.bottom) * S.reach;
+        if (c.top <= 0) continue;
+        var t0 = c.centre + c.top * R;
+        var b0 = c.centre - Math.max(0, c.bottom) * R;
+        if (!slack) { has[o] = 1; top[o] = t0; bot[o] = b0; continue; }
+
+        var y, found = -1;
+        for (y = Math.ceil(t0 + slack); y >= t0 - slack; y--) {
+          if (layerValue(c, y, R) + extra3d(wx, y, wz) > 0) { found = y; break; }
         }
+        if (found < 0) { has[o] = 1; top[o] = t0; bot[o] = b0; continue; }
+        var low = found;
+        for (y = Math.floor(b0 - slack); y <= b0 + slack; y++) {
+          if (layerValue(c, y, R) + extra3d(wx, y, wz) > 0) { low = y; break; }
+        }
+        has[o] = 1; top[o] = found; bot[o] = low;
       }
     }
   }
@@ -1261,7 +1306,21 @@ var GROUPS = [
     ]
   },
   {
-    num: "06", title: "Caves", open: false,
+    num: "06", title: "Landform noise", open: false,
+    blurb: "The vanilla-style 3D term. Real Minecraft terrain is not a height field — it is a depth gradient with a 3D noise added, and that noise is what gives it overhangs and ledges instead of a smooth surface. This is the same idea at the same scale.",
+    items: [
+      { type: "toggle", k: "t3On", label: "Landform noise",
+        note: "Off is how the mod ships today: islands are a height field with only fine detail on top." },
+      { k: "t3Strength", label: "Strength", min: 0, max: 0.6, step: 0.005, dp: 3,
+        note: "In density units, so this times the reach is how many blocks it can move the surface. Past about 0.25 it starts tearing islands into fragments." },
+      { k: "t3Oct", label: "First octave", min: -8, max: -3, step: 1, dp: 0 },
+      { k: "t3Squash", label: "Vertical squash", min: 0.15, max: 2, step: 0.05, dp: 2,
+        note: "Below one the noise varies more slowly with height than across it, which is what turns blobs into horizontal ledges. Vanilla's own 3D noise runs at 0.5." },
+      { type: "amps", k: "t3Amp", label: "Octave amplitudes", min: 0, max: 2, step: 0.05 }
+    ]
+  },
+  {
+    num: "07", title: "Caves", open: false,
     blurb: "Cut where a 3D noise passes through zero, which traces connected tunnels rather than isolated pockets.",
     items: [
       { type: "toggle", k: "cavesOn", label: "Carve caves" },
@@ -1444,6 +1503,9 @@ function writeOut() {
     },
     underside: { enabled: S.bowlOn, points: S.bowl.map(function (p) { return [round(p[0], 4), round(p[1], 5)]; }) },
     detail: { enabled: S.detailOn, strength: round(S.detailStrength, 4), firstOctave: S.detailOct, amplitudes: S.detailAmp },
+    landformNoise: { enabled: S.t3On, strength: round(S.t3Strength, 4), firstOctave: S.t3Oct,
+                     verticalSquash: round(S.t3Squash, 3),
+                     amplitudes: S.t3Amp.map(function (v) { return round(v, 3); }) },
     caves: { enabled: S.cavesOn, firstOctave: S.caveOct, amplitudes: S.caveAmp,
              band: round(S.caveBand, 4), depth: round(S.caveDepth, 3), skinFade: round(S.skinFade, 2) },
     measured: lastStats ? {
