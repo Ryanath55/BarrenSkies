@@ -99,10 +99,11 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-8, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
         );
-        // Finer and fully three dimensional, so it can undercut a face rather than only raise or lower it.
+        // Short wavelength, around sixteen blocks, so it reads as the small rises across a field rather than
+        // as broad swells. A coarser noise here just tilts whole hillsides.
         context.register(
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL,
-            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-6, 1.0D, 1.0D, 0.6D, 0.3D)
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-4, 1.0D, 0.6D, 0.3D)
         );
     }
 

@@ -148,7 +148,10 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         );
 
         return new NoiseGeneratorSettings(
-            NoiseSettings.create(BarrenSkiesWorldgen.WORLD_MIN_Y, BarrenSkiesWorldgen.WORLD_HEIGHT, 1, 2),
+            // Four block noise cells rather than eight. Terrain is interpolated between cell corners, so with
+            // eight block cells any face shorter than that is smoothed into a ramp and edges read as curves.
+            // Skylands over the Sea uses four for the same reason. It costs twice the vertical samples.
+            NoiseSettings.create(BarrenSkiesWorldgen.WORLD_MIN_Y, BarrenSkiesWorldgen.WORLD_HEIGHT, 1, 1),
             settings.defaultBlock(),
             settings.defaultFluid(),
             withIslands,

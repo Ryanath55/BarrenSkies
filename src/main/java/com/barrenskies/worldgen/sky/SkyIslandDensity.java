@@ -35,13 +35,10 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_DETAIL = noise("island_detail");
 
     /**
-     * No three dimensional detail noise is applied to the island surface.
-     *
-     * <p>Adding it was an attempt to break up domes, but the domes came from a smooth ridge spline and
-     * adding noise only made the tops lumpy. Skylands over the Sea uses none at all, and its island tops
-     * read as ordinary flat Minecraft ground because the surface is a smooth height field over very
-     * low frequency noise. Left as a note so it is not reintroduced.
+     * Fine surface texture, in density units. One unit moves the surface a whole layer reach, so this is
+     * about a block and a half of undulation.
      */
+    private static final double DETAIL_STRENGTH = 0.03D;
 
     /** Extra reach given to the biome mask so island edges are never left reporting the ground biome. */
     public static final double BIOME_MASK_MARGIN = 0.08D;
@@ -117,6 +114,14 @@ public final class SkyIslandDensity {
         );
 
         int reach = layerReach();
+        // Fine surface texture, deliberately tiny. A density unit is worth a whole reach in blocks, so this
+        // works out at one or two blocks of undulation: the small rises real plains have, rather than the
+        // perfectly level plate a pure height field otherwise gives. Earlier attempts at this were an order
+        // of magnitude stronger and made the tops lumpy instead.
+        DensityFunction detailField = DensityFunctions.mul(
+            DensityFunctions.noise(detail, 1.0D, 1.0D), DensityFunctions.constant(DETAIL_STRENGTH)
+        );
+
         List<DensityFunction> layers = new ArrayList<>(layerCount);
         int spacing = layerCount > 1 ? (bandTop - bandBottom) / (layerCount - 1) : 0;
 
@@ -146,7 +151,7 @@ public final class SkyIslandDensity {
             DensityFunction fadeDown = DensityFunctions.add(
                 DensityFunctions.yClampedGradient(centre - reach, centre, -1.0D, 0.0D), bottom
             );
-            layers.add(DensityFunctions.min(fadeUp, fadeDown));
+            layers.add(DensityFunctions.add(DensityFunctions.min(fadeUp, fadeDown), detailField));
         }
 
         DensityFunction combined = layers.getFirst();
