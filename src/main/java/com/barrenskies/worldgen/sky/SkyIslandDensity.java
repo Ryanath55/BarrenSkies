@@ -33,6 +33,7 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLANDS = noise("islands");
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_RIDGES = noise("island_ridges");
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_DETAIL = noise("island_detail");
+    public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_CAVES = noise("island_caves");
 
     /**
      * Fine surface texture, in density units. One unit moves the surface a whole layer reach, so this is
@@ -95,6 +96,7 @@ public final class SkyIslandDensity {
         Holder<NormalNoise.NoiseParameters> islands,
         Holder<NormalNoise.NoiseParameters> ridges,
         Holder<NormalNoise.NoiseParameters> detail,
+        Holder<NormalNoise.NoiseParameters> caveNoise,
         int bandBottom,
         int bandTop,
         int layerCount,
@@ -165,6 +167,10 @@ public final class SkyIslandDensity {
         for (int i = 1; i < layers.size(); i++) {
             combined = DensityFunctions.max(combined, layers.get(i));
         }
+
+        if (com.barrenskies.BarrenSkiesConfig.ISLAND_CAVES.get()) {
+            combined = DensityFunctions.add(combined, caves(caveNoise));
+        }
         // Scaled up before being handed to the world. The island field naturally sits within about plus or
         // minus one, but it is combined with the world density by taking the greater of the two, and open
         // air in the world density runs far more negative than that. Left unscaled it would lift genuine
@@ -173,6 +179,28 @@ public final class SkyIslandDensity {
         // Interpolated across noise cells, the way the game interpolates its own terrain. Without this the
         // per-column caching below shows through as flat square steps rather than a smooth surface.
         return DensityFunctions.interpolated(DensityFunctions.mul(combined, DensityFunctions.constant(SCALE)));
+    }
+
+    /**
+     * Tunnels through an island, carved where a 3D noise passes through zero.
+     *
+     * <p>A noise zero crossing is a winding sheet through space, so subtracting where the noise is near
+     * zero cuts a connected tunnel network rather than isolated pockets. Nothing is subtracted anywhere
+     * else. The technique is from Skylands over the Sea, whose own carver is capped at Y 80 and so never
+     * reaches an island: their island caves come entirely from the density like this.
+     */
+    private static DensityFunction caves(Holder<NormalNoise.NoiseParameters> caveNoise) {
+        DensityFunctions.Spline.Coordinate field = new DensityFunctions.Spline.Coordinate(
+            Holder.direct(DensityFunctions.noise(caveNoise, 1.0D, 1.0D))
+        );
+        CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve =
+            CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(field)
+                .addPoint(-0.05F, 0.1F, 0.0F)
+                .addPoint(0.0F, -1.5F, 0.0F)
+                .addPoint(0.05F, 0.1F, 0.0F)
+                .build();
+        // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
+        return DensityFunctions.min(DensityFunctions.interpolated(DensityFunctions.spline(carve)), DensityFunctions.zero());
     }
 
     /**

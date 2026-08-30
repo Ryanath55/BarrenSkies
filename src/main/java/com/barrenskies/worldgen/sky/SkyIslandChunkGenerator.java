@@ -37,7 +37,8 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
                 NoiseGeneratorSettings.CODEC.fieldOf("settings").forGetter(generator -> generator.baseSettings),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLANDS),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_RIDGES),
-                RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_DETAIL)
+                RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_DETAIL),
+                RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_CAVES)
             )
             .apply(instance, SkyIslandChunkGenerator::new)
     );
@@ -49,11 +50,12 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         Holder<NoiseGeneratorSettings> settings,
         Holder<NormalNoise.NoiseParameters> islands,
         Holder<NormalNoise.NoiseParameters> ridges,
-        Holder<NormalNoise.NoiseParameters> detail
+        Holder<NormalNoise.NoiseParameters> detail,
+        Holder<NormalNoise.NoiseParameters> caves
     ) {
         // Wrapped lazily: data generation builds the generator while the settings are still unbound, and
         // dereferencing them there fails.
-        super(biomeSource, new LazySettings(settings, islands, ridges, detail));
+        super(biomeSource, new LazySettings(settings, islands, ridges, detail, caves));
         this.baseSettings = settings;
     }
 
@@ -108,7 +110,8 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         Holder<NoiseGeneratorSettings> base,
         Holder<NormalNoise.NoiseParameters> islandNoise,
         Holder<NormalNoise.NoiseParameters> ridgeNoise,
-        Holder<NormalNoise.NoiseParameters> detailNoise
+        Holder<NormalNoise.NoiseParameters> detailNoise,
+        Holder<NormalNoise.NoiseParameters> caveNoise
     ) {
         NoiseGeneratorSettings settings = base.value();
         NoiseRouter router = settings.noiseRouter();
@@ -117,6 +120,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             islandNoise,
             ridgeNoise,
             detailNoise,
+            caveNoise,
             BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
             Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
             BarrenSkiesConfig.ISLAND_LAYERS.get(),
@@ -167,9 +171,9 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             settings.spawnTarget(),
             settings.seaLevel(),
             settings.disableMobGeneration(),
-            // Aquifers decide a fluid level for a whole column, assuming terrain rises from bedrock. Floating
-            // islands break that, and it filled the air around them with sheets and columns of water.
-            false,
+            // Aquifers are what put ponds in island hollows and water in island caves, which is where all of
+            // the island water in Skylands over the Sea comes from.
+            BarrenSkiesConfig.ISLAND_WATER.get(),
             settings.oreVeinsEnabled(),
             settings.useLegacyRandomSource()
         );
@@ -186,9 +190,10 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             Holder<NoiseGeneratorSettings> base,
             Holder<NormalNoise.NoiseParameters> islands,
             Holder<NormalNoise.NoiseParameters> ridges,
-            Holder<NormalNoise.NoiseParameters> detail
+            Holder<NormalNoise.NoiseParameters> detail,
+            Holder<NormalNoise.NoiseParameters> caves
         ) {
-            this(base, Suppliers.memoize(() -> withIslands(base, islands, ridges, detail)));
+            this(base, Suppliers.memoize(() -> withIslands(base, islands, ridges, detail, caves)));
         }
 
         @Override

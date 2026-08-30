@@ -11,6 +11,8 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD;
     public static final ModConfigSpec.DoubleValue ISLAND_SCALE;
     public static final ModConfigSpec.IntValue ISLAND_THICKNESS;
+    public static final ModConfigSpec.BooleanValue ISLAND_CAVES;
+    public static final ModConfigSpec.BooleanValue ISLAND_WATER;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
@@ -90,6 +92,29 @@ public final class BarrenSkiesConfig {
             )
             .translation("barrenskies.configuration.islandThickness")
             .defineInRange("islandThickness", 44, 12, 96);
+
+        ISLAND_CAVES = b
+            .comment(
+                "Whether to carve caves through the sky islands.",
+                "Cut where a three dimensional noise passes through zero, which traces a connected tunnel",
+                "network rather than isolated pockets. Carvers cannot do this: the vanilla cave carver is",
+                "limited to ground altitude and never reaches an island.",
+                "On a thin island a tunnel can break through to open sky, leaving arches and windows."
+            )
+            .translation("barrenskies.configuration.islandCaves")
+            .define("islandCaves", true);
+
+        ISLAND_WATER = b
+            .comment(
+                "Whether aquifers run, which is what puts ponds in island hollows and water in island caves.",
+                "This was switched off for a while because water appeared in mid air around islands. That was",
+                "a symptom of island density hovering at the solid threshold rather than of aquifers, and the",
+                "fault has since been fixed. Skylands over the Sea leaves aquifers on and disables springs",
+                "entirely, so all of its island water comes from here.",
+                "Turning this off also removes underground water from the barren surface below."
+            )
+            .translation("barrenskies.configuration.islandWater")
+            .define("islandWater", true);
 
         ALTITUDE_COOLING = b
             .comment(

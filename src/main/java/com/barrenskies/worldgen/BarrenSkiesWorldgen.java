@@ -105,6 +105,11 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-4, 1.0D, 0.6D, 0.3D)
         );
+        // Cave tunnels are cut where this passes through zero, so its wavelength is the tunnel spacing.
+        context.register(
+            com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_CAVES,
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-6, 1.0D, 1.0D, 1.0D)
+        );
     }
 
     public static void bootstrapNoiseSettings(BootstrapContext<NoiseGeneratorSettings> context) {
@@ -143,7 +148,8 @@ public final class BarrenSkiesWorldgen {
                 noiseSettings.getOrThrow(NoiseGeneratorSettings.OVERWORLD),
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLANDS),
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES),
-                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL)
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL),
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_CAVES)
             )
         );
         LevelStem nether = new LevelStem(
