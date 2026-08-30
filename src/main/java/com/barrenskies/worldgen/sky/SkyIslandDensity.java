@@ -56,8 +56,10 @@ public final class SkyIslandDensity {
      *
      * <p>Islands therefore reach this far below the configured floor, which the biome side has to allow
      * for. Switching pools at the floor itself left the underside of every island taking barren biomes.
-     */
-    public static final int LAYER_REACH = 64;
+     */;
+    public static int layerReach() {
+        return com.barrenskies.BarrenSkiesConfig.ISLAND_THICKNESS.get();
+    }
 
     private SkyIslandDensity() {
     }
@@ -114,6 +116,7 @@ public final class SkyIslandDensity {
             DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges)
         );
 
+        int reach = layerReach();
         List<DensityFunction> layers = new ArrayList<>(layerCount);
         int spacing = layerCount > 1 ? (bandTop - bandBottom) / (layerCount - 1) : 0;
 
@@ -138,10 +141,10 @@ public final class SkyIslandDensity {
             // inland the column is. Taking the lesser of the two means a column is only solid where both
             // agree, which is what gives an island a top and an underside.
             DensityFunction fadeUp = DensityFunctions.add(
-                DensityFunctions.yClampedGradient(centre, centre + LAYER_REACH, 0.0D, -1.0D), top
+                DensityFunctions.yClampedGradient(centre, centre + reach, 0.0D, -1.0D), top
             );
             DensityFunction fadeDown = DensityFunctions.add(
-                DensityFunctions.yClampedGradient(centre - LAYER_REACH, centre, -1.0D, 0.0D), bottom
+                DensityFunctions.yClampedGradient(centre - reach, centre, -1.0D, 0.0D), bottom
             );
             layers.add(DensityFunctions.min(fadeUp, fadeDown));
         }
@@ -179,10 +182,14 @@ public final class SkyIslandDensity {
         DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
+        // Three deck heights rather than two, so a landmass steps between levels instead of being one
+        // uniform plate. The transitions stay narrow, which is what makes them read as cliffs.
+        spline.addPoint(-1.00F, top(inland, 0.470F, 0.520F));
         spline.addPoint(-0.35F, top(inland, 0.700F, 0.770F));
         spline.addPoint(-0.25F, top(inland, 0.255F, 0.280F));
         spline.addPoint(0.25F, top(inland, 0.255F, 0.280F));
         spline.addPoint(0.35F, top(inland, 0.700F, 0.770F));
+        spline.addPoint(1.00F, top(inland, 0.470F, 0.520F));
         return DensityFunctions.spline(spline.build());
     }
 

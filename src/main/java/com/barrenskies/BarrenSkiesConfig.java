@@ -10,6 +10,7 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.IntValue ISLAND_LAYERS;
     public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD;
     public static final ModConfigSpec.DoubleValue ISLAND_SCALE;
+    public static final ModConfigSpec.IntValue ISLAND_THICKNESS;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
     public static final ModConfigSpec.DoubleValue OCEAN_CONTINENTALNESS_MAX;
@@ -56,9 +57,8 @@ public final class BarrenSkiesConfig {
                 "How many overlapping layers of islands to stack between the floor and the ceiling.",
                 "Layers are combined by taking whichever is denser, so islands from different layers overlap",
                 "and merge rather than averaging their heights. More layers means a busier, more vertical sky.",
-                "Islands reach 64 blocks either side of their layer, so layers about 48 apart overlap heavily",
-                "and fuse into broad flat-topped masses. Spread the same band over fewer layers and they",
-                "separate into individual domes. With the default band, four layers gives roughly that spacing."
+                "Islands reach islandThickness blocks either side of their layer, so layers closer together than",
+                "that overlap and fuse into broader masses, while layers further apart stand separate."
             )
             .translation("barrenskies.configuration.islandLayers")
             .defineInRange("islandLayers", 3, 1, 8);
@@ -78,6 +78,18 @@ public final class BarrenSkiesConfig {
             )
             .translation("barrenskies.configuration.islandScale")
             .defineInRange("islandScale", 0.85D, 0.1D, 4.0D);
+
+        ISLAND_THICKNESS = b
+            .comment(
+                "How far an island reaches above and below its layer, in blocks.",
+                "This is the single biggest control over how round an island looks. A thick island has a deep",
+                "bowl underneath it, and a deep bowl is a large curve, so it reads as round however level the",
+                "top is. The deck sits about three quarters of this above the layer and the bowl reaches",
+                "almost all of it below, so 44 gives an island roughly 75 blocks thick.",
+                "Raising this also spreads the layers further apart, since islands need the room."
+            )
+            .translation("barrenskies.configuration.islandThickness")
+            .defineInRange("islandThickness", 44, 12, 96);
 
         ALTITUDE_COOLING = b
             .comment(

@@ -70,7 +70,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         net.minecraft.world.level.chunk.ChunkAccess chunk
     ) {
         // Islands hang a layer reach below the configured floor, so the biome switch has to sit that low too.
-        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.LAYER_REACH;
+        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach();
         int layerCount = BarrenSkiesConfig.ISLAND_LAYERS.get();
         double threshold = BarrenSkiesConfig.ISLAND_THRESHOLD.get();
         double scale = BarrenSkiesConfig.ISLAND_SCALE.get();
@@ -157,7 +157,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             BarrenSkiesConfig.LIFT_SURFACE_RULES.get()
                 ? LiftedSurfaceRules.liftAbove(
                     settings.surfaceRule(),
-                    BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.LAYER_REACH,
+                    BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach(),
                     settings.seaLevel()
                 )
                 : settings.surfaceRule(),

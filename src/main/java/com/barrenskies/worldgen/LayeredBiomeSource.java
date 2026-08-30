@@ -190,7 +190,7 @@ public class LayeredBiomeSource extends BiomeSource {
             new Climate.ParameterList<>(List.copyOf(sky)),
             Set.copyOf(everything),
             skyBiomes,
-            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - com.barrenskies.worldgen.sky.SkyIslandDensity.LAYER_REACH
+            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - com.barrenskies.worldgen.sky.SkyIslandDensity.layerReach()
         );
     }
 

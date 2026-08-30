@@ -9,6 +9,7 @@
   "barrenskies.configuration.islandLayers": "Island layers",
   "barrenskies.configuration.islandThreshold": "Island coverage threshold",
   "barrenskies.configuration.islandScale": "Island scale",
+  "barrenskies.configuration.islandThickness": "Island thickness",
   "barrenskies.configuration.altitudeCooling": "Biomes cool with altitude",
   "barrenskies.configuration.liftSurfaceRules": "Lift surface rules to islands",
   "barrenskies.configuration.islandRadiusMin": "Smallest island radius",
