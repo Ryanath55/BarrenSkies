@@ -179,10 +179,10 @@ public final class SkyIslandDensity {
         DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
-        spline.addPoint(-0.35F, top(inland, 0.700F, 0.770F, 0.580F));
-        spline.addPoint(-0.25F, top(inland, 0.290F, 0.260F, 0.210F));
-        spline.addPoint(0.25F, top(inland, 0.290F, 0.260F, 0.210F));
-        spline.addPoint(0.35F, top(inland, 0.700F, 0.770F, 0.580F));
+        spline.addPoint(-0.35F, top(inland, 0.700F, 0.770F));
+        spline.addPoint(-0.25F, top(inland, 0.255F, 0.280F));
+        spline.addPoint(0.25F, top(inland, 0.255F, 0.280F));
+        spline.addPoint(0.35F, top(inland, 0.700F, 0.770F));
         return DensityFunctions.spline(spline.build());
     }
 
@@ -211,7 +211,12 @@ public final class SkyIslandDensity {
     }
 
     /**
-     * The upper surface: a steep rise at the very shore, then a broad flat deck.
+     * The upper surface: a steep rise at the very shore, then a level deck.
+     *
+     * <p>The deck never falls back inland. Peaking partway across and easing down again, as the shape this
+     * was taken from does, puts the high point near the median mask, and the result is a raised rim around
+     * every island with the middle sloping away from it. Rising once and then holding flat is what a plains
+     * island should look like.
      *
      * <p>The mask positions matter more than the heights. Measured over a million columns, half of all island
      * ground sits below mask 0.13 and only one percent passes 0.6. Skylands over the Sea puts its rise
@@ -220,17 +225,19 @@ public final class SkyIslandDensity {
      * the first 0.05 so it reads as a cliff at the shoreline, and everything beyond is deck.
      */
     private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> top(
-        DensityFunctions.Spline.Coordinate inland, float near, float peak, float inner
+        DensityFunctions.Spline.Coordinate inland, float shore, float deck
     ) {
         return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
             // Firmly negative outside an island, so open sky stays open rather than resting on the
             // threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.05F, -0.20F, 2.0F)
+            // Almost all of the height is gained in the first few hundredths of mask, which puts a cliff at
+            // the waterline and leaves the rest of the island level.
             .addPoint(0.0F, 0.0F, 9.0F)
-            .addPoint(0.05F, near, 1.2F)
-            .addPoint(0.13F, peak, -0.5F)
-            .addPoint(0.25F, inner, 0.0F)
+            .addPoint(0.04F, shore, 1.2F)
+            .addPoint(0.12F, deck, 0.1F)
+            .addPoint(0.40F, deck, 0.0F)
             .build();
     }
 }
