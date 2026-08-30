@@ -1,0 +1,1391 @@
+<title>Sky Island Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --ground:   #E4E7EA;
+  --panel:    #F6F7F8;
+  --panel-2:  #ECEFF1;
+  --rule:     #C6CCD2;
+  --rule-soft:#D8DDE2;
+  --ink:      #171B1F;
+  --ink-2:    #444D56;
+  --ink-dim:  #6B747E;
+  --accent:   #A93368;
+  --accent-2: #7E2A54;
+  --accent-wash: rgba(169,51,104,0.10);
+  --on-accent:#FFFFFF;
+  --void:     #CDD3D8;
+  --shadow:   0 1px 2px rgba(20,25,30,.08), 0 6px 20px rgba(20,25,30,.06);
+}
+:root:not([data-theme="light"]) {
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:   #131619;
+    --panel:    #1A1E23;
+    --panel-2:  #21262C;
+    --rule:     #2E353D;
+    --rule-soft:#252B32;
+    --ink:      #E8EBEE;
+    --ink-2:    #B2BAC2;
+    --ink-dim:  #848E98;
+    --accent:   #E1729E;
+    --accent-2: #F2A2C0;
+    --accent-wash: rgba(225,114,158,0.14);
+    --on-accent:#17090F;
+    --void:     #0D0F12;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.34);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:   #131619;
+  --panel:    #1A1E23;
+  --panel-2:  #21262C;
+  --rule:     #2E353D;
+  --rule-soft:#252B32;
+  --ink:      #E8EBEE;
+  --ink-2:    #B2BAC2;
+  --ink-dim:  #848E98;
+  --accent:   #E1729E;
+  --accent-2: #F2A2C0;
+  --accent-wash: rgba(225,114,158,0.14);
+  --on-accent:#17090F;
+  --void:     #0D0F12;
+  --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 26px rgba(0,0,0,.34);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 14px 72px;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 18px 2px 14px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 14px;
+}
+.masthead h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+  text-wrap: balance;
+}
+.masthead .sub {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.masthead .spacer { flex: 1 1 auto; }
+
+/* ---------- layout ---------- */
+.cols { display: block; }
+@media (min-width: 940px) {
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) 396px;
+    gap: 20px;
+    align-items: start;
+  }
+  .viewcol { position: sticky; top: 12px; }
+}
+
+/* ---------- viewer ---------- */
+.viewcol { position: sticky; top: 0; z-index: 20; }
+.viewer {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--panel-2);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 7px 11px;
+  min-height: 34px;
+  cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.bar-spacer { flex: 1 1 auto; }
+
+.ghost {
+  appearance: none;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 10px;
+  min-height: 34px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.stage {
+  position: relative;
+  background: var(--void);
+  touch-action: none;
+}
+.stage canvas { display: block; width: 100%; }
+#terrain, #map { image-rendering: pixelated; image-rendering: crisp-edges; }
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pane { display: none; position: relative; }
+.pane.on { display: block; }
+
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid var(--rule-soft);
+  background: var(--panel-2);
+}
+.readout div {
+  flex: 1 1 25%;
+  padding: 7px 10px;
+  border-right: 1px solid var(--rule-soft);
+  min-width: 96px;
+}
+.readout div:last-child { border-right: 0; }
+.readout dt {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin: 0 0 1px;
+}
+.readout dd {
+  margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--ink-dim);
+  padding: 8px 2px 0;
+  line-height: 1.45;
+}
+
+/* ---------- control stack ---------- */
+.stack { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+details.grp {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+details.grp > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 11px 12px;
+  display: grid;
+  grid-template-columns: 26px 1fr 16px;
+  align-items: baseline;
+  gap: 10px;
+}
+details.grp > summary::-webkit-details-marker { display: none; }
+details.grp > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.stagenum {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.grptitle { display: block; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+.grpblurb { display: block; font-size: 12.5px; color: var(--ink-dim); font-weight: 400; margin-top: 3px; line-height: 1.4; }
+.chev { color: var(--ink-dim); font-size: 11px; justify-self: end; transition: transform .15s ease; }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
+details.grp[open] > summary .chev { transform: rotate(90deg); }
+.grpbody { padding: 2px 12px 13px; border-top: 1px solid var(--rule-soft); }
+
+/* ---------- rows ---------- */
+.row { padding: 9px 0 3px; }
+.row + .row { border-top: 1px dotted var(--rule-soft); }
+.rowhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rowlabel { font-size: 13.5px; color: var(--ink-2); }
+.rowval {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  padding: 1px 6px;
+  min-width: 62px;
+  text-align: right;
+}
+.rownote { font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; line-height: 1.35; }
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  background: transparent;
+  margin: 8px 0 2px;
+  height: 26px;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--rule); border-radius: 2px;
+}
+input[type=range]::-moz-range-track {
+  height: 3px; background: var(--rule); border-radius: 2px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 22px; margin-top: -9.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--rule);
+}
+input[type=range]::-moz-range-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--rule);
+}
+input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.pair .sub {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 8px;
+  cursor: pointer;
+}
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch {
+  flex: 0 0 auto;
+  width: 42px; height: 24px;
+  border-radius: 12px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  position: relative;
+  transition: background .13s ease;
+}
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--panel);
+  transition: transform .13s ease;
+}
+.toggle input:checked + .switch { background: var(--accent); border-color: var(--accent); }
+.toggle input:checked + .switch::after { transform: translateX(18px); }
+.toggle input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.amps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 14px; }
+@media (min-width: 460px) { .amps { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------- export ---------- */
+.export { margin-top: 14px; }
+.export textarea {
+  width: 100%;
+  min-height: 168px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 10px;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+}
+.export textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.solid {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  min-height: 42px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.solid:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.solid:active { background: var(--accent-2); }
+
+footer.note {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  line-height: 1.55;
+  max-width: 68ch;
+}
+footer.note strong { color: var(--ink-2); font-weight: 600; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Sky Island Workbench</h1>
+    <span class="sub">Barren Skies 1.5.0</span>
+    <span class="spacer"></span>
+    <span class="sub" id="perf">&nbsp;</span>
+  </header>
+
+  <div class="cols">
+
+    <div class="viewcol">
+      <div class="viewer">
+        <div class="viewer-bar">
+          <div class="seg" role="group" aria-label="View">
+            <button type="button" id="tabSection" aria-pressed="true">Cross-section</button>
+            <button type="button" id="tabMap" aria-pressed="false">Map</button>
+          </div>
+          <span class="bar-spacer"></span>
+          <button type="button" class="ghost" id="btnJump">New location</button>
+        </div>
+
+        <div class="stage">
+          <div class="pane on" id="paneSection">
+            <canvas id="terrain"></canvas>
+            <canvas id="overlay"></canvas>
+          </div>
+          <div class="pane" id="paneMap">
+            <canvas id="map"></canvas>
+          </div>
+        </div>
+
+        <dl class="readout">
+          <div><dt>Land</dt><dd id="statLand">–</dd></div>
+          <div><dt>Mask p50</dt><dd id="statP50">–</dd></div>
+          <div><dt>Mask p90</dt><dd id="statP90">–</dd></div>
+          <div><dt>Thickness</dt><dd id="statThick">–</dd></div>
+        </dl>
+      </div>
+      <p class="hint" id="hint">Drag the view to travel. The dashed lines are the layer centres — islands hang below and stack above them.</p>
+    </div>
+
+    <div>
+      <div class="stack" id="stack"></div>
+
+      <div class="export">
+        <details class="grp" open>
+          <summary>
+            <span class="stagenum">↧</span>
+            <span>
+              <span class="grptitle">Send me your settings</span>
+              <span class="grpblurb">Copy this and paste it into our chat. I'll fold it into the mod.</span>
+            </span>
+            <span class="chev">›</span>
+          </summary>
+          <div class="grpbody">
+            <textarea id="out" readonly spellcheck="false" aria-label="Settings to copy"></textarea>
+            <div class="btnrow">
+              <button type="button" class="solid" id="btnCopy">Copy settings</button>
+              <button type="button" class="ghost" id="btnReset">Reset to 1.5.0</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <footer class="note">
+        <strong>What this is.</strong> The same density-function maths the mod runs, ported to run in your
+        browser: Minecraft's Perlin and normal noise, its cubic splines, and the clamped vertical gradients
+        that turn a surface height into rock. Nothing here comes from Terralith — island shape is entirely
+        the mod's own, which is why it ports cleanly.
+        <br><br>
+        <strong>What it isn't.</strong> The noise is statistically identical to the game's, but it isn't
+        seeded from your world seed, so you'll see different islands rather than yours. Shapes, proportions
+        and the numbers in the readout all carry over; a specific island won't.
+      </footer>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+"use strict";
+
+/* =====================================================================
+   Minecraft noise, ported
+   ===================================================================== */
+
+var GRAD = [
+  [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+  [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+  [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1],
+  [1,1,0],[0,-1,1],[-1,1,0],[0,-1,-1]
+];
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function strHash(s) {
+  var h = 2166136261 >>> 0;
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function Rng(seed) { this.f = mulberry32(seed >>> 0); }
+Rng.prototype.nextDouble = function () { return this.f(); };
+Rng.prototype.nextInt = function (n) { return Math.floor(this.f() * n); };
+
+/* ImprovedNoise — gradient table, permutation and fade curve as in the game. */
+function Improved(rng) {
+  this.xo = rng.nextDouble() * 256;
+  this.yo = rng.nextDouble() * 256;
+  this.zo = rng.nextDouble() * 256;
+  var p = new Uint8Array(512), i;
+  for (i = 0; i < 256; i++) p[i] = i;
+  for (i = 0; i < 256; i++) {
+    var j = rng.nextInt(256 - i);
+    var t = p[i]; p[i] = p[i + j]; p[i + j] = t;
+  }
+  for (i = 0; i < 256; i++) p[256 + i] = p[i];
+  this.p = p;
+}
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function gradDot(h, x, y, z) { var g = GRAD[h & 15]; return g[0] * x + g[1] * y + g[2] * z; }
+
+Improved.prototype.noise = function (x, y, z) {
+  var dx = x + this.xo, dy = y + this.yo, dz = z + this.zo;
+  var ix = Math.floor(dx), iy = Math.floor(dy), iz = Math.floor(dz);
+  var fx = dx - ix, fy = dy - iy, fz = dz - iz;
+  var p = this.p;
+  var X = ix & 255, Y = iy & 255, Z = iz & 255;
+  var u = fade(fx), v = fade(fy), w = fade(fz);
+
+  var A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+  var B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+
+  var x1 = gradDot(p[AA], fx, fy, fz);
+  var x2 = gradDot(p[BA], fx - 1, fy, fz);
+  var x3 = gradDot(p[AB], fx, fy - 1, fz);
+  var x4 = gradDot(p[BB], fx - 1, fy - 1, fz);
+  var x5 = gradDot(p[AA + 1], fx, fy, fz - 1);
+  var x6 = gradDot(p[BA + 1], fx - 1, fy, fz - 1);
+  var x7 = gradDot(p[AB + 1], fx, fy - 1, fz - 1);
+  var x8 = gradDot(p[BB + 1], fx - 1, fy - 1, fz - 1);
+
+  var l1 = x1 + u * (x2 - x1);
+  var l2 = x3 + u * (x4 - x3);
+  var l3 = x5 + u * (x6 - x5);
+  var l4 = x7 + u * (x8 - x7);
+  var m1 = l1 + v * (l2 - l1);
+  var m2 = l3 + v * (l4 - l3);
+  return m1 + w * (m2 - m1);
+};
+
+var WRAP = 33554432;
+function wrap(v) { return v - Math.floor(v / WRAP + 0.5) * WRAP; }
+
+/* PerlinNoise — octave frequencies and the game's two normalising factors. */
+function Perlin(seedBase, tag, firstOctave, amps) {
+  this.amps = amps;
+  this.levels = new Array(amps.length);
+  for (var k = 0; k < amps.length; k++) {
+    this.levels[k] = amps[k] === 0
+      ? null
+      : new Improved(new Rng(strHash(tag + "/octave_" + (firstOctave + k)) ^ seedBase));
+  }
+  this.inputFactor = Math.pow(2, firstOctave);
+  this.valueFactor = Math.pow(2, amps.length - 1) / (Math.pow(2, amps.length) - 1);
+}
+Perlin.prototype.get = function (x, y, z) {
+  var d = 0, e = this.inputFactor, f = this.valueFactor;
+  for (var i = 0; i < this.levels.length; i++) {
+    var n = this.levels[i];
+    if (n !== null) d += this.amps[i] * n.noise(wrap(x * e), wrap(y * e), wrap(z * e)) * f;
+    e *= 2; f /= 2;
+  }
+  return d;
+};
+
+/* NormalNoise — two Perlin fields, the second at the game's odd input factor. */
+var INPUT_FACTOR = 1.0181268882175227;
+function Normal(seedBase, tag, firstOctave, amps) {
+  this.a = new Perlin(seedBase, tag + "#a", firstOctave, amps);
+  this.b = new Perlin(seedBase, tag + "#b", firstOctave, amps);
+  var lo = Infinity, hi = -Infinity;
+  for (var i = 0; i < amps.length; i++) {
+    if (amps[i] !== 0) { if (i < lo) lo = i; if (i > hi) hi = i; }
+  }
+  var octaves = (lo === Infinity) ? 0 : (hi - lo);
+  this.valueFactor = 0.16666666666666666 / (0.1 * (1 + 1 / (octaves + 1)));
+}
+Normal.prototype.get = function (x, y, z) {
+  return (this.a.get(x, y, z) +
+          this.b.get(x * INPUT_FACTOR, y * INPUT_FACTOR, z * INPUT_FACTOR)) * this.valueFactor;
+};
+
+/* CubicSpline.Multipoint — values may be nested splines, as they are in the deck. */
+function spline(coord, points) { return { coord: coord, pts: points }; }
+function splineValue(p, ctx) { return typeof p.val === "number" ? p.val : evalSpline(p.val, ctx); }
+function evalSpline(sp, ctx) {
+  var f = ctx[sp.coord];
+  var pts = sp.pts, n = pts.length, i = -1, k;
+  for (k = 0; k < n; k++) { if (f < pts[k].loc) break; i = k; }
+  if (i < 0) return splineValue(pts[0], ctx) + pts[0].der * (f - pts[0].loc);
+  if (i === n - 1) return splineValue(pts[i], ctx) + pts[i].der * (f - pts[i].loc);
+  var a = pts[i], b = pts[i + 1];
+  var t = (f - a.loc) / (b.loc - a.loc);
+  var va = splineValue(a, ctx), vb = splineValue(b, ctx);
+  var c1 = a.der * (b.loc - a.loc) - (vb - va);
+  var c2 = -b.der * (b.loc - a.loc) + (vb - va);
+  return (va + t * (vb - va)) + t * (1 - t) * ((c1 + t * (c2 - c1)));
+}
+
+/* =====================================================================
+   Model — the mod's SkyIslandDensity, rebuilt
+   ===================================================================== */
+
+var DEFAULTS = {
+  seed: 20260830,
+  originX: 0, originZ: 0,
+
+  bandBottom: 380, bandTop: 520, layers: 3,
+  threshold: 0.425, hScale: 0.85, reach: 44,
+
+  islandsOct: -8, islandsAmp: [1, 1, 2, 0, -2, 1, 0],
+
+  ridgeOn: true, ridgeOct: -8, ridgeAmp: [1, 2, 1, 0, 0, 0],
+  bandInner: 0.25, bandOuter: 0.35,
+  deckLow: [0.255, 0.280],
+  deckHigh: [0.700, 0.770],
+  deckOuter: [0.470, 0.520],
+  shoreAt: 0.04, deckAt: 0.12,
+
+  bowlOn: true,
+  bowl: [[0.02, 0.350], [0.05, 0.550], [0.10, 0.750],
+         [0.18, 0.880], [0.30, 0.960], [0.50, 0.9875]],
+
+  detailOn: true, detailStrength: 0.03, detailOct: -4, detailAmp: [1, 0.6, 0.3],
+
+  cavesOn: true, caveOct: -8, caveAmp: [1, 1],
+  caveBand: 0.05, caveDepth: -1.5, skinFade: 10
+};
+
+var S = clone(DEFAULTS);
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+var noises = {}, noiseKey = "";
+function buildNoises() {
+  var key = [S.seed, S.islandsOct, S.islandsAmp, S.ridgeOct, S.ridgeAmp,
+             S.detailOct, S.detailAmp, S.caveOct, S.caveAmp].join("|");
+  if (key === noiseKey) return;
+  noiseKey = key;
+  var b = S.seed >>> 0;
+  noises.islands = new Normal(b, "islands", S.islandsOct, S.islandsAmp);
+  noises.ridge   = new Normal(b, "island_ridges", S.ridgeOct, S.ridgeAmp);
+  noises.detail  = new Normal(b, "island_detail", S.detailOct, S.detailAmp);
+  noises.cave    = new Normal(b, "island_caves", S.caveOct, S.caveAmp);
+}
+
+/* top(): steep rise at the shore, then a deck that never falls back. */
+function topSpline(shore, deck) {
+  return spline("mask", [
+    { loc: -1.0, val: -1.4, der: 0 },
+    { loc: -0.05, val: -0.20, der: 2.0 },
+    { loc: 0.0, val: 0.0, der: 9.0 },
+    { loc: S.shoreAt, val: shore, der: 1.2 },
+    { loc: S.deckAt, val: deck, der: 0.1 },
+    { loc: 0.40, val: deck, der: 0.0 }
+  ]);
+}
+/* The deck varies by ridge across three levels, in deliberately narrow bands. */
+function deckSpline() {
+  if (!S.ridgeOn) return topSpline(S.deckLow[0], S.deckLow[1]);
+  var lo = S.bandInner, hi = S.bandOuter;
+  return spline("ridge", [
+    { loc: -1.00, val: topSpline(S.deckOuter[0], S.deckOuter[1]), der: 0 },
+    { loc: -hi,   val: topSpline(S.deckHigh[0], S.deckHigh[1]), der: 0 },
+    { loc: -lo,   val: topSpline(S.deckLow[0], S.deckLow[1]), der: 0 },
+    { loc: lo,    val: topSpline(S.deckLow[0], S.deckLow[1]), der: 0 },
+    { loc: hi,    val: topSpline(S.deckHigh[0], S.deckHigh[1]), der: 0 },
+    { loc: 1.00,  val: topSpline(S.deckOuter[0], S.deckOuter[1]), der: 0 }
+  ]);
+}
+/* underside(): a bowl that only ever deepens. Off mirrors the deck — the old dome on a dome. */
+function bowlSpline() {
+  if (!S.bowlOn) return deckSpline();
+  var pts = [
+    { loc: -1.0, val: -1.4, der: 0 },
+    { loc: -0.08, val: -0.25, der: 1.6 },
+    { loc: 0.0, val: 0.0, der: 0 }
+  ];
+  for (var i = 0; i < S.bowl.length; i++) pts.push({ loc: S.bowl[i][0], val: S.bowl[i][1], der: 0 });
+  pts.sort(function (a, b) { return a.loc - b.loc; });
+  return spline("mask", pts);
+}
+function caveSpline() {
+  return spline("cave", [
+    { loc: -S.caveBand, val: 0.1, der: 0 },
+    { loc: 0, val: S.caveDepth, der: 0 },
+    { loc: S.caveBand, val: 0.1, der: 0 }
+  ]);
+}
+
+/* Everything above a column that does not change with height. */
+function column(x, z, deck, bowl) {
+  var out = [], ridge = S.ridgeOn ? noises.ridge.get(x, 0, z) : 0;
+  var span = S.layers > 1 ? (S.bandTop - S.bandBottom) / (S.layers - 1) : 0;
+  for (var i = 0; i < S.layers; i++) {
+    var shift = i * 4096;
+    var mask = noises.islands.get(x * S.hScale + shift, 0, z * S.hScale + shift) - S.threshold;
+    var ctx = { mask: mask, ridge: ridge };
+    out.push({
+      centre: S.bandBottom + span * i,
+      mask: mask,
+      top: evalSpline(deck, ctx),
+      bottom: evalSpline(bowl, ctx)
+    });
+  }
+  return out;
+}
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* Splines and scratch context are built once per render, never per block. */
+var CAVE_SP = null;
+var CAVE_CTX = { cave: 0 };
+
+/* The island field at one point, exactly as the density function composes it. */
+function density(cols, x, y, z) {
+  var R = S.reach, best = -1e9, i;
+  for (i = 0; i < cols.length; i++) {
+    var c = cols[i], dy = (y - c.centre) / R;
+    var up = c.top - clamp(dy, 0, 2);
+    var down = c.bottom + clamp(dy, -2, 0);
+    var v = up < down ? up : down;
+    if (v > best) best = v;
+  }
+  if (S.detailOn) best += noises.detail.get(x, y, z) * S.detailStrength;
+  if (S.cavesOn) {
+    CAVE_CTX.cave = noises.cave.get(x, y, z);
+    var cut = evalSpline(CAVE_SP, CAVE_CTX);
+    if (cut > 0) cut = 0;
+    best += cut * clamp(best * S.skinFade, 0, 1);
+  }
+  return best;
+}
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+
+var SEC_W = 288;
+var terrain = document.getElementById("terrain");
+var overlay = document.getElementById("overlay");
+var mapc = document.getElementById("map");
+var tctx = terrain.getContext("2d");
+var octx = overlay.getContext("2d");
+var mctx = mapc.getContext("2d");
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+var PAL = {
+  grass: [104, 142, 74],
+  dirt:  [122, 94, 66],
+  stone: [128, 133, 138],
+  deep:  [96, 100, 106]
+};
+
+function stageWidth() {
+  var w = document.querySelector(".stage").clientWidth;
+  return w > 0 ? w : 320;
+}
+
+/* Density only stays positive within about one reach of a layer, even though the fades run to two,
+   so framing on two reaches wastes half the view on empty sky. */
+function yRange() {
+  var lo = S.bandBottom - S.reach * 1.25 - 10;
+  var hi = S.bandTop + S.reach * 1.25 + 10;
+  return { lo: Math.floor(lo), hi: Math.ceil(hi) };
+}
+
+function dither(a, b) {
+  var h = (Math.imul(a, 374761393) + Math.imul(b, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h >>> 0) % 256) / 256;
+}
+
+function renderSection(step) {
+  var yr = yRange();
+  var H = Math.max(40, Math.ceil((yr.hi - yr.lo) / step));
+  var W = Math.ceil(SEC_W / step);
+  terrain.width = W; terrain.height = H;
+
+  var img = tctx.createImageData(W, H);
+  var d = img.data;
+  var deck = deckSpline(), bowl = bowlSpline();
+  var z = S.originZ;
+
+  for (var px = 0; px < W; px++) {
+    var x = S.originX + px * step;
+    var cols = column(x, z, deck, bowl);
+    var depth = -1;
+    for (var py = 0; py < H; py++) {
+      var y = yr.hi - py * step;
+      var solid = density(cols, x, y, z) > 0;
+      var o = (py * W + px) * 4;
+      // Open sky is left transparent so the stage's own themed background shows through, which means
+      // the bitmap never has to be repainted when the viewer switches between light and dark.
+      if (!solid) { depth = -1; d[o + 3] = 0; continue; }
+      depth = depth < 0 ? 0 : depth + 1;
+      var c = depth === 0 ? PAL.grass : (depth <= Math.max(1, Math.round(3 / step)) ? PAL.dirt : PAL.stone);
+      // Grain, plus a slow darkening with depth so the underside reads as volume rather than a slab.
+      var shade = (0.90 + 0.13 * dither(px, py)) * (1 - Math.min(0.22, depth * 0.004 * step));
+      d[o] = c[0] * shade; d[o+1] = c[1] * shade; d[o+2] = c[2] * shade; d[o+3] = 255;
+    }
+  }
+  tctx.putImageData(img, 0, 0);
+  terrain.style.height = Math.round(stageWidth() * (H / W)) + "px";
+  drawOverlay(yr);
+}
+
+function drawOverlay(yr) {
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var w = stageWidth(), h = parseFloat(terrain.style.height) || 240;
+  overlay.style.height = h + "px";
+  overlay.width = Math.round(w * dpr); overlay.height = Math.round(h * dpr);
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, w, h);
+
+  var span = yr.hi - yr.lo;
+  function ry(y) { return (yr.hi - y) / span * h; }
+
+  var accent = css("--accent"), dim = css("--ink-dim");
+  var count = S.layers, gap = count > 1 ? (S.bandTop - S.bandBottom) / (count - 1) : 0;
+
+  octx.save();
+  octx.setLineDash([5, 5]);
+  octx.strokeStyle = accent;
+  octx.globalAlpha = 0.75;
+  octx.lineWidth = 1;
+  for (var i = 0; i < count; i++) {
+    var y = ry(S.bandBottom + gap * i);
+    octx.beginPath(); octx.moveTo(0, y); octx.lineTo(w, y); octx.stroke();
+  }
+  octx.restore();
+
+  octx.font = "500 10px 'JetBrains Mono', ui-monospace, monospace";
+  octx.fillStyle = dim;
+  octx.textBaseline = "middle";
+  var stepY = span > 420 ? 100 : span > 220 ? 50 : 25;
+  var first = Math.ceil(yr.lo / stepY) * stepY;
+  for (var yy = first; yy <= yr.hi; yy += stepY) {
+    var py = ry(yy);
+    octx.globalAlpha = 0.35;
+    octx.beginPath(); octx.moveTo(0, py); octx.lineTo(w, py); octx.strokeStyle = dim;
+    octx.lineWidth = 0.5; octx.stroke();
+    octx.globalAlpha = 0.9;
+    octx.fillText("Y " + yy, 5, py - 7);
+  }
+  octx.globalAlpha = 1;
+}
+
+var lastStats = null;
+
+function renderMap(step) {
+  var N = Math.ceil(192 / step);
+  mapc.width = N; mapc.height = N;
+  var img = mctx.createImageData(N, N);
+  var d = img.data;
+  var deck = deckSpline(), bowl = bowlSpline();
+  var blocks = 2 * step;
+
+  var heights = new Float64Array(N * N);
+
+  for (var j = 0; j < N; j++) {
+    for (var i = 0; i < N; i++) {
+      var x = S.originX + (i - N / 2) * blocks;
+      var z = S.originZ + (j - N / 2) * blocks;
+      var cols = column(x, z, deck, bowl);
+      var top = -1e9, any = false;
+      for (var k = 0; k < cols.length; k++) {
+        var c = cols[k];
+        if (c.top > 0) {
+          any = true;
+          var t = c.centre + c.top * S.reach;
+          if (t > top) top = t;
+        }
+      }
+      heights[j * N + i] = any ? top : NaN;
+    }
+  }
+
+  var loY = S.bandBottom - S.reach, hiY = S.bandTop + S.reach;
+  for (var jj = 0; jj < N; jj++) {
+    for (var ii = 0; ii < N; ii++) {
+      var idx = jj * N + ii, o = idx * 4, hgt = heights[idx];
+      if (isNaN(hgt)) { d[o + 3] = 0; continue; }
+      var t2 = clamp((hgt - loY) / (hiY - loY), 0, 1);
+      var col = ramp(t2);
+      var hx = neigh(heights, N, ii + 1, jj) - neigh(heights, N, ii - 1, jj);
+      var hz = neigh(heights, N, ii, jj + 1) - neigh(heights, N, ii, jj - 1);
+      if (isNaN(hx)) hx = 0;
+      if (isNaN(hz)) hz = 0;
+      var sh = clamp(1 + (hx * 0.6 + hz * 0.35) / 26, 0.55, 1.45);
+      d[o] = clamp(col[0] * sh, 0, 255);
+      d[o+1] = clamp(col[1] * sh, 0, 255);
+      d[o+2] = clamp(col[2] * sh, 0, 255);
+      d[o+3] = 255;
+    }
+  }
+  mctx.putImageData(img, 0, 0);
+  mapc.style.height = stageWidth() + "px";
+}
+
+/* The readout has to describe the whole world, not the patch on screen. At the default scale one
+   island is about 300 blocks across, so a map-sized sample would only ever measure wherever you
+   happen to be standing. This walks a coarse grid across eight thousand blocks instead. */
+function computeStats() {
+  var N = 76, spacing = 104;
+  var deck = deckSpline(), bowl = bowlSpline();
+  var masks = [], land = 0, tsum = 0, tn = 0;
+  for (var j = 0; j < N; j++) {
+    for (var i = 0; i < N; i++) {
+      var x = S.originX + (i - N / 2) * spacing;
+      var z = S.originZ + (j - N / 2) * spacing;
+      var cols = column(x, z, deck, bowl);
+      var top = -1e9, bot = 1e9, any = false;
+      for (var k = 0; k < cols.length; k++) {
+        var c = cols[k];
+        if (c.mask > 0) masks.push(c.mask);
+        if (c.top > 0) {
+          any = true;
+          var t = c.centre + c.top * S.reach;
+          var b = c.centre - Math.max(0, c.bottom) * S.reach;
+          if (t > top) top = t;
+          if (b < bot) bot = b;
+        }
+      }
+      if (any) { land++; tsum += top - bot; tn++; }
+    }
+  }
+  masks.sort(function (a, b) { return a - b; });
+  lastStats = {
+    land: land / (N * N),
+    p50: masks.length ? masks[Math.floor(masks.length * 0.5)] : 0,
+    p90: masks.length ? masks[Math.floor(masks.length * 0.9)] : 0,
+    thick: tn ? tsum / tn : 0
+  };
+  showStats();
+}
+function neigh(a, N, i, j) {
+  if (i < 0 || j < 0 || i >= N || j >= N) return NaN;
+  return a[j * N + i];
+}
+function ramp(t) {
+  var stops = [[0.00, [176,152,106]], [0.28, [126,146,86]],
+               [0.58, [110,124,104]], [0.82, [140,144,146]], [1.00, [196,200,202]]];
+  for (var i = 0; i < stops.length - 1; i++) {
+    if (t <= stops[i + 1][0]) {
+      var a = stops[i], b = stops[i + 1];
+      var u = (t - a[0]) / (b[0] - a[0]);
+      return [a[1][0] + u * (b[1][0] - a[1][0]),
+              a[1][1] + u * (b[1][1] - a[1][1]),
+              a[1][2] + u * (b[1][2] - a[1][2])];
+    }
+  }
+  return stops[stops.length - 1][1];
+}
+function showStats() {
+  if (!lastStats) return;
+  document.getElementById("statLand").textContent = (lastStats.land * 100).toFixed(1) + "%";
+  document.getElementById("statP50").textContent = lastStats.p50.toFixed(3);
+  document.getElementById("statP90").textContent = lastStats.p90.toFixed(3);
+  document.getElementById("statThick").textContent = Math.round(lastStats.thick) + " blk";
+}
+
+/* =====================================================================
+   Scheduling
+   ===================================================================== */
+
+var view = "section", pending = false, coarse = false;
+
+function request(isCoarse) {
+  coarse = isCoarse;
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(function () {
+    pending = false;
+    var t0 = performance.now();
+    buildNoises();
+    CAVE_SP = caveSpline();
+    if (view === "section") renderSection(coarse ? 3 : 1);
+    else renderMap(coarse ? 3 : 1);
+    if (!coarse) computeStats();
+    document.getElementById("perf").textContent = Math.round(performance.now() - t0) + " ms";
+    writeOut();
+    save();
+  });
+}
+
+/* =====================================================================
+   Controls
+   ===================================================================== */
+
+var GROUPS = [
+  {
+    num: "01", title: "Mask", open: true,
+    blurb: "A flat 2D noise field. Where it clears the threshold, there is an island.",
+    items: [
+      { k: "threshold", label: "Coverage threshold", min: 0.05, max: 0.9, step: 0.005, dp: 3,
+        note: "Higher leaves more open sky. Everything below is measured against this." },
+      { k: "hScale", label: "Horizontal scale", min: 0.1, max: 3, step: 0.01, dp: 2,
+        note: "Smaller stretches the noise into bigger landmasses." },
+      { k: "islandsOct", label: "Noise first octave", min: -11, max: -4, step: 1, dp: 0,
+        note: "Wavelength of the coarsest octave, as a power of two." },
+      { type: "amps", k: "islandsAmp", label: "Octave amplitudes", min: -2, max: 2, step: 0.1,
+        note: "The negative one in the middle is what stops islands reading as round blobs." }
+    ]
+  },
+  {
+    num: "02", title: "Layers", open: true,
+    blurb: "Islands are built once per layer and combined by taking whichever is denser, so they overlap rather than average.",
+    items: [
+      { k: "layers", label: "Layer count", min: 1, max: 8, step: 1, dp: 0 },
+      { k: "bandBottom", label: "Lowest layer (Y)", min: 200, max: 700, step: 5, dp: 0 },
+      { k: "bandTop", label: "Highest layer (Y)", min: 200, max: 900, step: 5, dp: 0 },
+      { k: "reach", label: "Thickness / reach", min: 10, max: 110, step: 1, dp: 0,
+        note: "One density unit is worth this many blocks. The single biggest control over how round an island looks." }
+    ]
+  },
+  {
+    num: "03", title: "Deck", open: true,
+    blurb: "The upper surface: a steep rise at the shore, then a level deck that never falls back inland.",
+    items: [
+      { type: "toggle", k: "ridgeOn", label: "Ridge terracing",
+        note: "Off puts the low deck everywhere — one uniform plate." },
+      { k: "shoreAt", label: "Shore rise ends at mask", min: 0.005, max: 0.3, step: 0.005, dp: 3,
+        note: "Compress this and the shoreline reads as a cliff; widen it and the island domes." },
+      { k: "deckAt", label: "Deck flattens at mask", min: 0.02, max: 0.5, step: 0.005, dp: 3 },
+      { type: "pair", k: "deckLow", label: "Low deck", subs: ["shore", "deck"], min: 0, max: 1.4, step: 0.005, dp: 3 },
+      { type: "pair", k: "deckHigh", label: "High deck", subs: ["shore", "deck"], min: 0, max: 1.4, step: 0.005, dp: 3 },
+      { type: "pair", k: "deckOuter", label: "Outer deck", subs: ["shore", "deck"], min: 0, max: 1.4, step: 0.005, dp: 3,
+        note: "Three deck heights, so a landmass steps between levels. Keep peaks under 1.0 or islands pillar to the world ceiling." },
+      { k: "bandInner", label: "Low band edge (ridge)", min: 0.02, max: 0.9, step: 0.01, dp: 2 },
+      { k: "bandOuter", label: "High band edge (ridge)", min: 0.05, max: 0.95, step: 0.01, dp: 2,
+        note: "Narrow gap between these two is what cuts terraces and cliff lines across a landmass." },
+      { k: "ridgeOct", label: "Ridge first octave", min: -11, max: -4, step: 1, dp: 0 },
+      { type: "amps", k: "ridgeAmp", label: "Ridge amplitudes", min: -2, max: 2, step: 0.1 }
+    ]
+  },
+  {
+    num: "04", title: "Underside", open: false,
+    blurb: "A bowl that only ever deepens towards the middle. It takes no notice of ridge — that asymmetry is what keeps islands from reading as spheres.",
+    items: [
+      { type: "toggle", k: "bowlOn", label: "Bowl underside",
+        note: "Off mirrors the deck underneath, which is the dome-on-a-dome shape this replaced." },
+      { type: "bowl" }
+    ]
+  },
+  {
+    num: "05", title: "Detail", open: false,
+    blurb: "Fine 3D texture added to the finished field — the one or two block rises that real flat ground has.",
+    items: [
+      { type: "toggle", k: "detailOn", label: "Detail noise" },
+      { k: "detailStrength", label: "Strength", min: 0, max: 0.15, step: 0.002, dp: 3,
+        note: "A density unit is a whole reach in blocks, so this is tiny on purpose." },
+      { k: "detailOct", label: "First octave", min: -8, max: -2, step: 1, dp: 0 },
+      { type: "amps", k: "detailAmp", label: "Amplitudes", min: 0, max: 2, step: 0.1 }
+    ]
+  },
+  {
+    num: "06", title: "Caves", open: false,
+    blurb: "Cut where a 3D noise passes through zero, which traces connected tunnels rather than isolated pockets.",
+    items: [
+      { type: "toggle", k: "cavesOn", label: "Carve caves" },
+      { k: "caveOct", label: "First octave", min: -11, max: -4, step: 1, dp: 0,
+        note: "This, not the band below, is what sets tunnel width. Too high and tunnels come out narrower than a noise cell, which is what made them look boxy." },
+      { k: "caveBand", label: "Carved band", min: 0.005, max: 0.4, step: 0.005, dp: 3,
+        note: "How much of the noise range gets cut. Raise it and far more of the island hollows out." },
+      { k: "caveDepth", label: "Carve depth", min: -4, max: -0.2, step: 0.05, dp: 2 },
+      { k: "skinFade", label: "Surface skin", min: 0, max: 40, step: 0.5, dp: 1,
+        note: "Holds the outer rock closed so tunnels don't flare open wherever they pass near the surface. Zero turns it off." }
+    ]
+  }
+];
+
+var stack = document.getElementById("stack");
+
+function el(tag, cls, txt) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+
+function slider(label, get, set, min, max, step, dp, note) {
+  var row = el("div", "row");
+  var head = el("div", "rowhead");
+  head.appendChild(el("span", "rowlabel", label));
+  var val = el("span", "rowval", (+get()).toFixed(dp));
+  head.appendChild(val);
+  row.appendChild(head);
+
+  var r = document.createElement("input");
+  r.type = "range"; r.min = min; r.max = max; r.step = step; r.value = get();
+  r.setAttribute("aria-label", label);
+  r.addEventListener("input", function () {
+    set(parseFloat(r.value));
+    val.textContent = (+get()).toFixed(dp);
+    request(true);
+  });
+  r.addEventListener("change", function () { request(false); });
+  row.appendChild(r);
+  if (note) row.appendChild(el("div", "rownote", note));
+  refreshers.push(function () { r.value = get(); val.textContent = (+get()).toFixed(dp); });
+  return row;
+}
+
+var refreshers = [];
+
+function toggle(label, k, note) {
+  var row = el("div", "row");
+  var lab = el("label", "toggle");
+  lab.appendChild(el("span", "rowlabel", label));
+  var cb = document.createElement("input");
+  cb.type = "checkbox"; cb.checked = !!S[k];
+  cb.addEventListener("change", function () { S[k] = cb.checked; request(false); });
+  lab.appendChild(cb);
+  lab.appendChild(el("span", "switch"));
+  row.appendChild(lab);
+  if (note) row.appendChild(el("div", "rownote", note));
+  refreshers.push(function () { cb.checked = !!S[k]; });
+  return row;
+}
+
+function build() {
+  GROUPS.forEach(function (g) {
+    var d = document.createElement("details");
+    d.className = "grp";
+    if (g.open) d.open = true;
+    var sum = document.createElement("summary");
+    sum.appendChild(el("span", "stagenum", g.num));
+    var mid = el("span");
+    mid.appendChild(el("span", "grptitle", g.title));
+    mid.appendChild(el("span", "grpblurb", g.blurb));
+    sum.appendChild(mid);
+    sum.appendChild(el("span", "chev", "›"));
+    d.appendChild(sum);
+
+    var body = el("div", "grpbody");
+    g.items.forEach(function (it) {
+      if (it.type === "toggle") { body.appendChild(toggle(it.label, it.k, it.note)); return; }
+
+      if (it.type === "amps") {
+        var row = el("div", "row");
+        row.appendChild(el("div", "rowlabel", it.label));
+        var grid = el("div", "amps");
+        var octKey = it.k === "islandsAmp" ? "islandsOct"
+                   : it.k === "ridgeAmp" ? "ridgeOct"
+                   : it.k === "detailAmp" ? "detailOct" : "caveOct";
+        S[it.k].forEach(function (_, i) {
+          (function (idx) {
+            grid.appendChild(slider("oct " + (S[octKey] + idx),
+              function () { return S[it.k][idx]; },
+              function (v) { S[it.k][idx] = v; }, it.min, it.max, it.step, 1));
+          })(i);
+        });
+        row.appendChild(grid);
+        if (it.note) row.appendChild(el("div", "rownote", it.note));
+        body.appendChild(row);
+        return;
+      }
+
+      if (it.type === "pair") {
+        var prow = el("div", "row");
+        prow.appendChild(el("div", "rowlabel", it.label));
+        var pg = el("div", "pair");
+        [0, 1].forEach(function (i) {
+          pg.appendChild(slider(it.subs[i], function () { return S[it.k][i]; },
+            function (v) { S[it.k][i] = v; }, it.min, it.max, it.step, it.dp));
+        });
+        prow.appendChild(pg);
+        if (it.note) prow.appendChild(el("div", "rownote", it.note));
+        body.appendChild(prow);
+        return;
+      }
+
+      if (it.type === "bowl") {
+        S.bowl.forEach(function (_, i) {
+          var brow = el("div", "row");
+          brow.appendChild(el("div", "rowlabel", "Bowl point " + (i + 1)));
+          var bg = el("div", "pair");
+          bg.appendChild(slider("at mask", function () { return S.bowl[i][0]; },
+            function (v) { S.bowl[i][0] = v; }, 0.005, 1.0, 0.005, 3));
+          bg.appendChild(slider("depth", function () { return S.bowl[i][1]; },
+            function (v) { S.bowl[i][1] = v; }, 0, 1.6, 0.005, 4));
+          brow.appendChild(bg);
+          if (i === S.bowl.length - 1) {
+            brow.appendChild(el("div", "rownote",
+              "Half of all island ground sits below mask 0.13, so where these points sit matters far more than how deep they go."));
+          }
+          body.appendChild(brow);
+        });
+        return;
+      }
+
+      body.appendChild(slider(it.label, function () { return S[it.k]; },
+        function (v) { S[it.k] = v; }, it.min, it.max, it.step, it.dp, it.note));
+    });
+
+    d.appendChild(body);
+    stack.appendChild(d);
+  });
+}
+
+function refreshAll() { refreshers.forEach(function (f) { f(); }); }
+
+/* =====================================================================
+   Export, persistence, wiring
+   ===================================================================== */
+
+function writeOut() {
+  var o = {
+    barrenSkies: "island-tuning",
+    from: "Sky Island Workbench",
+    config: {
+      skyIslandBottom: S.bandBottom, skyIslandTop: S.bandTop,
+      islandLayers: S.layers, islandThreshold: round(S.threshold, 4),
+      islandScale: round(S.hScale, 3), islandThickness: S.reach,
+      islandCaves: S.cavesOn
+    },
+    islandsNoise: { firstOctave: S.islandsOct, amplitudes: S.islandsAmp.map(function (v) { return round(v, 3); }) },
+    ridgeNoise: { firstOctave: S.ridgeOct, amplitudes: S.ridgeAmp.map(function (v) { return round(v, 3); }), enabled: S.ridgeOn },
+    deck: {
+      shoreAt: round(S.shoreAt, 4), deckAt: round(S.deckAt, 4),
+      bands: [round(S.bandInner, 3), round(S.bandOuter, 3)],
+      low: S.deckLow.map(function (v) { return round(v, 4); }),
+      high: S.deckHigh.map(function (v) { return round(v, 4); }),
+      outer: S.deckOuter.map(function (v) { return round(v, 4); })
+    },
+    underside: { enabled: S.bowlOn, points: S.bowl.map(function (p) { return [round(p[0], 4), round(p[1], 5)]; }) },
+    detail: { enabled: S.detailOn, strength: round(S.detailStrength, 4), firstOctave: S.detailOct, amplitudes: S.detailAmp },
+    caves: { enabled: S.cavesOn, firstOctave: S.caveOct, amplitudes: S.caveAmp,
+             band: round(S.caveBand, 4), depth: round(S.caveDepth, 3), skinFade: round(S.skinFade, 2) },
+    measured: lastStats ? {
+      landFraction: round(lastStats.land, 4),
+      maskP50: round(lastStats.p50, 4),
+      maskP90: round(lastStats.p90, 4),
+      meanThicknessBlocks: Math.round(lastStats.thick)
+    } : null
+  };
+  document.getElementById("out").value = JSON.stringify(o, null, 2);
+}
+function round(v, n) { var p = Math.pow(10, n); return Math.round(v * p) / p; }
+
+function save() {
+  try { localStorage.setItem("bs-workbench", JSON.stringify(S)); } catch (e) {}
+}
+function load() {
+  try {
+    var raw = localStorage.getItem("bs-workbench");
+    if (!raw) return false;
+    var o = JSON.parse(raw);
+    Object.keys(DEFAULTS).forEach(function (k) { if (o[k] !== undefined) S[k] = o[k]; });
+    return true;
+  } catch (e) { return false; }
+}
+
+function setView(v) {
+  view = v;
+  document.getElementById("paneSection").classList.toggle("on", v === "section");
+  document.getElementById("paneMap").classList.toggle("on", v === "map");
+  document.getElementById("tabSection").setAttribute("aria-pressed", String(v === "section"));
+  document.getElementById("tabMap").setAttribute("aria-pressed", String(v === "map"));
+  document.getElementById("hint").textContent = v === "section"
+    ? "Drag the view to travel. The dashed lines are the layer centres — islands hang below and stack above them."
+    : "Looking down on the island tops, shaded by slope. Drag to travel; the readout below is measured over what you can see.";
+  request(false);
+}
+
+document.getElementById("tabSection").addEventListener("click", function () { setView("section"); });
+document.getElementById("tabMap").addEventListener("click", function () { setView("map"); });
+
+/* Land is a minority of the sky, so a random jump usually lands in empty air. Look for a spot with
+   an island under it before settling there. */
+function findLand(tries) {
+  buildNoises();
+  var deck = deckSpline(), bowl = bowlSpline();
+  for (var t = 0; t < tries; t++) {
+    var x = Math.round((Math.random() - 0.5) * 40000);
+    var z = Math.round((Math.random() - 0.5) * 40000);
+    var cols = column(x + 140, z, deck, bowl);
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i].top > 0.15) { S.originX = x; S.originZ = z; return true; }
+    }
+  }
+  return false;
+}
+
+document.getElementById("btnJump").addEventListener("click", function () {
+  if (!findLand(400)) {
+    S.originX = Math.round((Math.random() - 0.5) * 40000);
+    S.originZ = Math.round((Math.random() - 0.5) * 40000);
+  }
+  request(false);
+});
+
+document.getElementById("btnCopy").addEventListener("click", function () {
+  var ta = document.getElementById("out");
+  var btn = this;
+  function done(ok) {
+    btn.textContent = ok ? "Copied" : "Select and copy";
+    setTimeout(function () { btn.textContent = "Copy settings"; }, 1600);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(function () { done(true); }, function () {
+      ta.removeAttribute("readonly"); ta.select(); done(false);
+    });
+  } else { ta.removeAttribute("readonly"); ta.select(); done(false); }
+});
+
+document.getElementById("btnReset").addEventListener("click", function () {
+  var ox = S.originX, oz = S.originZ;
+  S = clone(DEFAULTS);
+  S.originX = ox; S.originZ = oz;
+  refreshAll();
+  request(false);
+});
+
+/* drag to travel */
+function dragging(node, onMove) {
+  var active = false, lx = 0, ly = 0;
+  node.addEventListener("pointerdown", function (e) {
+    active = true; lx = e.clientX; ly = e.clientY;
+    node.setPointerCapture(e.pointerId);
+  });
+  node.addEventListener("pointermove", function (e) {
+    if (!active) return;
+    var dx = e.clientX - lx, dy = e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    onMove(dx, dy);
+    request(true);
+  });
+  function end(e) {
+    if (!active) return;
+    active = false;
+    try { node.releasePointerCapture(e.pointerId); } catch (err) {}
+    request(false);
+  }
+  node.addEventListener("pointerup", end);
+  node.addEventListener("pointercancel", end);
+}
+dragging(document.getElementById("paneSection"), function (dx) {
+  S.originX -= Math.round(dx * (SEC_W / Math.max(1, terrain.clientWidth)) * 2);
+});
+dragging(document.getElementById("paneMap"), function (dx, dy) {
+  var per = 384 / Math.max(1, mapc.clientWidth);
+  S.originX -= Math.round(dx * per);
+  S.originZ -= Math.round(dy * per);
+});
+
+/* The terrain bitmaps are theme-independent, but the overlay's rules and labels are not, so redraw
+   on both routes the viewer can change theme by: the OS setting, and the explicit toggle that stamps
+   data-theme on the root element. */
+var mq = window.matchMedia("(prefers-color-scheme: dark)");
+if (mq.addEventListener) mq.addEventListener("change", function () { request(false); });
+if (window.MutationObserver) {
+  new MutationObserver(function () { request(false); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
+}
+
+window.addEventListener("resize", function () { request(false); });
+
+var restored = load();
+build();
+refreshAll();
+if (!restored) findLand(600);
+setView("section");
+
+})();
+</script>
