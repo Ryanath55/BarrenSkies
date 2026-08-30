@@ -168,46 +168,60 @@ public final class SkyIslandDensity {
      * falloff is what produces headlands, bays and varied cliff heights instead of a dome.
      */
     private static DensityFunction surface(DensityFunction ridgeField, DensityFunction mask, boolean upper) {
-        DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         DensityFunctions.Spline.Coordinate inland = new DensityFunctions.Spline.Coordinate(Holder.direct(mask));
+        if (!upper) {
+            return DensityFunctions.spline(underside(inland));
+        }
 
-        // Ridge decides whether a stretch of island is tall or low, and the bands are deliberately narrow:
-        // the height collapses across a tenth of ridge, which is what cuts terraces and cliff lines across a
-        // landmass. Sweeping gently across the whole ridge range instead, as this did before, can only
-        // produce smooth domes however the rest is tuned. Values follow Skylands over the Sea.
+        // Ridge decides whether a stretch of island stands tall or low, and the bands are deliberately
+        // narrow: the height collapses across a tenth of ridge, which is what cuts terraces and cliff lines
+        // across a landmass. Values follow Skylands over the Sea.
+        DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
         CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
             CubicSpline.builder(ridge);
-        spline.addPoint(-0.35F, tall(inland, upper));
-        spline.addPoint(-0.25F, low(inland, upper));
-        spline.addPoint(0.25F, low(inland, upper));
-        spline.addPoint(0.35F, tall(inland, upper));
+        spline.addPoint(-0.35F, top(inland, 0.633F, 0.770F, 0.311F));
+        spline.addPoint(-0.25F, top(inland, 0.340F, 0.240F, 0.130F));
+        spline.addPoint(0.25F, top(inland, 0.340F, 0.240F, 0.130F));
+        spline.addPoint(0.35F, top(inland, 0.633F, 0.770F, 0.311F));
         return DensityFunctions.spline(spline.build());
     }
 
-    /** The taller island profile: rises steeply from the shore, peaks a third of the way in, then falls. */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> tall(
-        DensityFunctions.Spline.Coordinate inland, boolean upper
+    /**
+     * The underside: a bowl that dives steadily deeper towards the middle of an island.
+     *
+     * <p>Nothing like the top, and that is the point. It rises without ever falling back, takes no notice of
+     * ridge, and reaches almost the full layer reach at the centre. Mirroring the top profile down here
+     * instead gives a dome under a dome, which is what made islands read as spheres. Values follow Skylands
+     * over the Sea, which is where the shape comes from.
+     */
+    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> underside(
+        DensityFunctions.Spline.Coordinate inland
     ) {
-        return upper ? profile(inland, 0.633F, 0.770F, 0.311F) : profile(inland, 0.600F, 0.700F, 0.300F);
-    }
-
-    /** The low profile, which peaks almost at the shore and stays flat inland. */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> low(
-        DensityFunctions.Spline.Coordinate inland, boolean upper
-    ) {
-        return upper ? profile(inland, 0.340F, 0.240F, 0.130F) : profile(inland, 0.300F, 0.220F, 0.120F);
+        return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
+            .addPoint(-1.0F, -1.4F, 0.0F)
+            .addPoint(-0.08F, -0.25F, 1.6F)
+            .addPoint(0.0F, 0.0F, 0.0F)
+            .addPoint(0.05F, 0.300F, 0.0F)
+            .addPoint(0.1F, 0.450F, 0.0F)
+            .addPoint(0.2F, 0.600F, 0.0F)
+            .addPoint(0.3F, 0.700F, 0.0F)
+            .addPoint(0.4F, 0.800F, 0.0F)
+            .addPoint(0.5F, 0.850F, 0.0F)
+            .addPoint(0.6F, 0.950F, 0.0F)
+            .addPoint(0.7F, 0.9875F, 0.0F)
+            .build();
     }
 
     /**
-     * Island thickness as a function of how far inland a column is, given the height it reaches at three
-     * points. Zero at the shoreline so land tapers out rather than ending in a wall.
+     * The upper surface: rises steeply from the shore, peaks about a third of the way in, then eases back
+     * so the interior is a broad flat deck rather than a mound.
      */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> profile(
+    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> top(
         DensityFunctions.Spline.Coordinate inland, float near, float peak, float inner
     ) {
         return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
-            // Well outside an island the offset is firmly negative, so open sky stays open rather than
-            // resting on the threshold at each layer height.
+            // Firmly negative outside an island, so open sky stays open rather than resting on the
+            // threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.08F, -0.25F, 1.6F)
             .addPoint(0.0F, 0.0F, 2.0F)
