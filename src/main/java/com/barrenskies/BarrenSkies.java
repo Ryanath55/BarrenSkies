@@ -15,6 +15,7 @@ public class BarrenSkies {
 
     public BarrenSkies(IEventBus modBus, ModContainer container) {
         BarrenSkiesWorldgen.register(modBus);
+        com.barrenskies.worldgen.feature.BarrenSkiesFeatures.register(modBus);
         container.registerConfig(ModConfig.Type.COMMON, BarrenSkiesConfig.SPEC);
     }
 }

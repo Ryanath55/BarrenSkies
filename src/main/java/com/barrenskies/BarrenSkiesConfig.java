@@ -15,6 +15,8 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.BooleanValue LANDFORM_NOISE;
     public static final ModConfigSpec.DoubleValue LANDFORM_STRENGTH;
     public static final ModConfigSpec.DoubleValue LANDFORM_SQUASH;
+    public static final ModConfigSpec.BooleanValue ISLAND_WATERFALLS;
+    public static final ModConfigSpec.IntValue WATERFALL_RARITY;
     public static final ModConfigSpec.BooleanValue ISLAND_WATER;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
@@ -136,6 +138,27 @@ public final class BarrenSkiesConfig {
             )
             .translation("barrenskies.configuration.islandCaves")
             .define("islandCaves", true);
+
+        ISLAND_WATERFALLS = b
+            .comment(
+                "Whether springs form on island rims and pour over the edge.",
+                "A basin is cut into the island top and filled with source water, with a notch through the",
+                "rim for it to escape by. Source blocks never drain, so the fall lasts as long as the island.",
+                "Where the ground below is sea or river the water lands in it, and a fall is something a",
+                "player can swim up, which is what makes an island reachable before you can fly."
+            )
+            .translation("barrenskies.configuration.islandWaterfalls")
+            .define("islandWaterfalls", true);
+
+        WATERFALL_RARITY = b
+            .comment(
+                "Of the island rims found, one in this many gets a spring.",
+                "Several spots on each chunk are looked at and nearly all are nowhere near an edge, so this",
+                "counts only the ones that could have had a waterfall, not chunks.",
+                "Lower means more. 1 puts one on every rim it finds; 3 is occasional; 20 makes one a landmark."
+            )
+            .translation("barrenskies.configuration.waterfallRarity")
+            .defineInRange("waterfallRarity", 3, 1, 200);
 
         ISLAND_WATER = b
             .comment(

@@ -11,6 +11,8 @@
   "barrenskies.configuration.islandScale": "Island scale",
   "barrenskies.configuration.islandThickness": "Island thickness",
   "barrenskies.configuration.islandCaves": "Caves in islands",
+  "barrenskies.configuration.islandWaterfalls": "Island waterfalls",
+  "barrenskies.configuration.waterfallRarity": "Waterfall rarity",
   "barrenskies.configuration.landformNoise": "Landform noise",
   "barrenskies.configuration.landformStrength": "Landform noise strength",
   "barrenskies.configuration.landformSquash": "Landform vertical squash",

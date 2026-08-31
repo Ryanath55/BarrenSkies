@@ -27,7 +27,10 @@ public final class BarrenSkiesDataGen {
     private static final RegistrySetBuilder BUILDER = new RegistrySetBuilder()
         .add(Registries.NOISE, BarrenSkiesWorldgen::bootstrapNoises)
         .add(Registries.DIMENSION_TYPE, BarrenSkiesWorldgen::bootstrapDimensionTypes)
-        .add(Registries.WORLD_PRESET, BarrenSkiesWorldgen::bootstrapWorldPresets);
+        .add(Registries.WORLD_PRESET, BarrenSkiesWorldgen::bootstrapWorldPresets)
+        .add(Registries.CONFIGURED_FEATURE, com.barrenskies.worldgen.feature.BarrenSkiesFeatures::bootstrapConfiguredFeatures)
+        .add(Registries.PLACED_FEATURE, com.barrenskies.worldgen.feature.BarrenSkiesFeatures::bootstrapPlacedFeatures)
+        .add(net.neoforged.neoforge.registries.NeoForgeRegistries.Keys.BIOME_MODIFIERS, com.barrenskies.worldgen.feature.BarrenSkiesFeatures::bootstrapBiomeModifiers);
 
     @SubscribeEvent
     public static void gather(GatherDataEvent event) {
