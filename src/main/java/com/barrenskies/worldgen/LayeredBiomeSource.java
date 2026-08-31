@@ -112,6 +112,8 @@ public class LayeredBiomeSource extends BiomeSource {
             palettes.put(kind, waterPalette(surface, kind));
         }
 
+        java.util.Map<String, int[]> swaps = new java.util.TreeMap<>();
+        Set<String> misplaced = new java.util.TreeSet<>();
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> lower = new ArrayList<>(caves);
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> sky = new ArrayList<>(surface);
         int substituted = 0;
@@ -129,16 +131,50 @@ public class LayeredBiomeSource extends BiomeSource {
                     lower.add(entry);
                     continue;
                 }
-                List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette = palettes.get(kind);
+                // Which pool the replacement comes from follows the terrain, not the biome that used to
+                // be here. A climate point at ocean continentalness is under water whatever was attached
+                // to it, so replacing it with an inland desert puts sand and camels on the sea floor.
+                // Terralith's skylands are exactly that case: they sit at deep ocean continentalness
+                // because they are islands floating above open sea, and denying them from the surface
+                // turned every one of their points into desert.
+                Kind target = isOceanic(entry.getFirst(), oceanContinentalnessMax) ? Kind.OCEAN : kind;
+                List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette = palettes.get(target);
                 if (palette.isEmpty()) {
                     // Nothing of the right kind to swap in. Keeping a biome we would rather not have beats
                     // putting land in the water, which is the failure that actually breaks structures.
                     lower.add(entry);
                     continue;
                 }
-                lower.add(Pair.of(entry.getFirst(), nearest(entry.getFirst(), palette, LayeredBiomeSource::shapeDistance)));
+                Holder<Biome> replacement = nearest(entry.getFirst(), palette, LayeredBiomeSource::shapeDistance);
+                if (target == Kind.OCEAN && Kind.of(replacement) == Kind.LAND) {
+                    misplaced.add(name(entry.getSecond()) + " -> " + name(replacement));
+                }
+                lower.add(Pair.of(entry.getFirst(), replacement));
                 substituted++;
+                swaps.computeIfAbsent(
+                    name(entry.getSecond()) + " [c " + Climate.unquantizeCoord(entry.getFirst().continentalness().min())
+                        + ".." + Climate.unquantizeCoord(entry.getFirst().continentalness().max()) + "] -> " + name(replacement),
+                    key -> new int[1]
+                )[0]++;
             }
+        }
+
+        // Kept at debug: this is the log that found desert being painted over deep ocean, and the next
+        // substitution bug will show up the same way.
+        // Kept at debug: this is the log that caught desert being painted over deep ocean, and the next
+        // substitution bug will show up the same way.
+        swaps.forEach((label, count) -> BarrenSkies.LOG.debug("  swap x{}: {}", count[0], label));
+
+        // Self check, and it only ever fires on our own mistakes. Land that the base worldgen itself puts
+        // at ocean continentalness -- mushroom fields, Terralith's island biomes -- is its business and
+        // generates as islands. Land that *we* substituted in there is the failure that put camels on the
+        // sea floor, because the terrain is water whatever the biome says.
+        if (!misplaced.isEmpty()) {
+            BarrenSkies.LOG.error(
+                "Substituted dry land at ocean continentalness: {}. This puts land biomes under water and "
+                    + "will misplace structures and mob spawns. Please report it.",
+                misplaced
+            );
         }
 
         BarrenSkies.LOG.info(
@@ -369,6 +405,10 @@ public class LayeredBiomeSource extends BiomeSource {
     private static long gap(Climate.Parameter from, Climate.Parameter to) {
         long midpoint = (from.min() + from.max()) / 2L;
         return Math.max(0L, Math.max(to.min() - midpoint, midpoint - to.max()));
+    }
+
+    private static String name(Holder<Biome> biome) {
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("?");
     }
 
     private static long square(long value) {
