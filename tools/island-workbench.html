@@ -430,7 +430,7 @@ footer.note strong { color: var(--ink-2); font-weight: 600; }
 
   <header class="masthead">
     <h1>Sky Island Workbench</h1>
-    <span class="sub">Barren Skies 1.5.0</span>
+    <span class="sub">Barren Skies 1.6.0</span>
     <span class="spacer"></span>
     <span class="sub" id="perf">&nbsp;</span>
   </header>
@@ -488,7 +488,7 @@ footer.note strong { color: var(--ink-2); font-weight: 600; }
             <textarea id="out" readonly spellcheck="false" aria-label="Settings to copy"></textarea>
             <div class="btnrow">
               <button type="button" class="solid" id="btnCopy">Copy settings</button>
-              <button type="button" class="ghost" id="btnReset">Reset to 1.5.0</button>
+              <button type="button" class="ghost" id="btnReset">Reset to 1.6.0</button>
             </div>
           </div>
         </details>
@@ -653,30 +653,30 @@ function evalSpline(sp, ctx) {
 var DEFAULTS = {
   seed: 20260830,
   originX: 0, originZ: 0,
-  yaw: 0.6, camY: 552, camDist: 330,
+  yaw: 0.6, camY: 620, camDist: 330,
 
-  bandBottom: 380, bandTop: 520, layers: 3,
-  threshold: 0.425, hScale: 0.85, reach: 44,
+  bandBottom: 380, bandTop: 560, layers: 4,
+  threshold: 0.58, hScale: 0.42, reach: 42,
 
   islandsOct: -8, islandsAmp: [1, 1, 2, 0, -2, 1, 0],
 
-  ridgeOn: true, ridgeOct: -8, ridgeAmp: [1, 2, 1, 0, 0, 0],
-  bandInner: 0.25, bandOuter: 0.35,
-  deckLow: [0.255, 0.280],
-  deckHigh: [0.700, 0.770],
-  deckOuter: [0.470, 0.520],
+  ridgeOn: true, ridgeOct: -7, ridgeAmp: [1, 2, 1, 0, 0, 0],
+  bandInner: 0.12, bandOuter: 0.49,
+  deckLow: [0.125, 0.160],
+  deckHigh: [0.380, 0.610],
+  deckOuter: [1.095, 1.240],
   shoreAt: 0.04, deckAt: 0.12,
 
   bowlOn: true,
   bowl: [[0.02, 0.350], [0.05, 0.550], [0.10, 0.750],
          [0.18, 0.880], [0.30, 0.960], [0.50, 0.9875]],
 
-  detailOn: true, detailStrength: 0.03, detailOct: -4, detailAmp: [1, 0.6, 0.3],
+  detailOn: true, detailStrength: 0.038, detailOct: -5, detailAmp: [1, 0.6, 0.3],
 
-  t3On: false, t3Strength: 0.18, t3Oct: -6, t3Squash: 0.5, t3Amp: [1, 0.5, 0.25],
+  t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
-  caveBand: 0.05, caveDepth: -1.5, skinFade: 10
+  caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
 
 var S = clone(DEFAULTS);
@@ -1366,7 +1366,7 @@ var GROUPS = [
     blurb: "The vanilla-style 3D term. Real Minecraft terrain is not a height field — it is a depth gradient with a 3D noise added, and that noise is what gives it overhangs and ledges instead of a smooth surface. This is the same idea at the same scale.",
     items: [
       { type: "toggle", k: "t3On", label: "Landform noise",
-        note: "Off is how the mod ships today: islands are a height field with only fine detail on top." },
+        note: "Now on by default. Off is the old look: a height field with only fine texture on top." },
       { k: "t3Strength", label: "Strength", min: 0, max: 0.6, step: 0.005, dp: 3,
         note: "In density units, so this times the reach is how many blocks it can move the surface. Past about 0.25 it starts tearing islands into fragments." },
       { k: "t3Oct", label: "First octave", min: -8, max: -3, step: 1, dp: 0 },
@@ -1703,6 +1703,19 @@ if (window.MutationObserver) {
 }
 
 window.addEventListener("resize", function () { request(false); });
+
+/* Deliberate hook. This page exists to measure the generator, and questions come up that no fixed
+   readout anticipates -- how wide the tunnels actually are, what the noise distribution looks like
+   under a given setting. Reaching the internals from the console is the whole point. */
+window.__bs = {
+  state: S, noises: noises, evalSpline: evalSpline, caveSpline: caveSpline,
+  deckSpline: deckSpline, bowlSpline: bowlSpline, column: column, density: density,
+  extra3d: extra3d, layerValue: layerValue, solidAt: solidAt,
+  // Synchronous. request() only schedules a frame, so anything measuring a noise it just changed
+  // has to rebuild here first or it reads the previous one.
+  buildNoises: buildNoises, noiseOf: function () { return noises; },
+  rebuild: function () { request(false); }
+};
 
 var restored = load();
 build();

@@ -12,6 +12,9 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.DoubleValue ISLAND_SCALE;
     public static final ModConfigSpec.IntValue ISLAND_THICKNESS;
     public static final ModConfigSpec.BooleanValue ISLAND_CAVES;
+    public static final ModConfigSpec.BooleanValue LANDFORM_NOISE;
+    public static final ModConfigSpec.DoubleValue LANDFORM_STRENGTH;
+    public static final ModConfigSpec.DoubleValue LANDFORM_SQUASH;
     public static final ModConfigSpec.BooleanValue ISLAND_WATER;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
@@ -51,7 +54,7 @@ public final class BarrenSkiesConfig {
                 "temperature freezes everything above about Y 600. That, not world height, is what limits it."
             )
             .translation("barrenskies.configuration.skyIslandTop")
-            .defineInRange("skyIslandTop", 520, 0, 950);
+            .defineInRange("skyIslandTop", 560, 0, 950);
 
 
         ISLAND_LAYERS = b
@@ -63,7 +66,7 @@ public final class BarrenSkiesConfig {
                 "that overlap and fuse into broader masses, while layers further apart stand separate."
             )
             .translation("barrenskies.configuration.islandLayers")
-            .defineInRange("islandLayers", 3, 1, 8);
+            .defineInRange("islandLayers", 4, 1, 8);
 
         ISLAND_THRESHOLD = b
             .comment(
@@ -71,7 +74,7 @@ public final class BarrenSkiesConfig {
                 "Around 0.30 gives large connected landmasses, 0.55 gives sparse scattered islands."
             )
             .translation("barrenskies.configuration.islandThreshold")
-            .defineInRange("islandThreshold", 0.425D, 0.05D, 0.9D);
+            .defineInRange("islandThreshold", 0.58D, 0.05D, 0.9D);
 
         ISLAND_SCALE = b
             .comment(
@@ -79,7 +82,7 @@ public final class BarrenSkiesConfig {
                 "larger values break the sky into smaller, more numerous islands."
             )
             .translation("barrenskies.configuration.islandScale")
-            .defineInRange("islandScale", 0.85D, 0.1D, 4.0D);
+            .defineInRange("islandScale", 0.42D, 0.1D, 4.0D);
 
         ISLAND_THICKNESS = b
             .comment(
@@ -91,7 +94,37 @@ public final class BarrenSkiesConfig {
                 "Raising this also spreads the layers further apart, since islands need the room."
             )
             .translation("barrenskies.configuration.islandThickness")
-            .defineInRange("islandThickness", 44, 12, 96);
+            .defineInRange("islandThickness", 42, 12, 96);
+
+        LANDFORM_NOISE = b
+            .comment(
+                "Whether to add a three dimensional noise to the island shape.",
+                "Real Minecraft terrain is not a height field. It is a depth gradient with a 3D noise added,",
+                "and that noise is what gives ground its overhangs, ledges and broken edges instead of a",
+                "smooth surface. Without this an island is a pure height map with only fine texture on top,",
+                "which is most of why they used to read as too round and too smooth."
+            )
+            .translation("barrenskies.configuration.landformNoise")
+            .define("landformNoise", true);
+
+        LANDFORM_STRENGTH = b
+            .comment(
+                "How strongly the landform noise reshapes the islands, in density units.",
+                "One density unit is worth a whole island thickness in blocks, so this times islandThickness",
+                "is roughly how far it can move a surface. Past about 0.25 it stops adding texture and starts",
+                "tearing islands into separate fragments."
+            )
+            .translation("barrenskies.configuration.landformStrength")
+            .defineInRange("landformStrength", 0.15D, 0.0D, 0.6D);
+
+        LANDFORM_SQUASH = b
+            .comment(
+                "How much slower the landform noise varies with height than it does horizontally.",
+                "Below one it stretches the noise vertically, which is what turns round blobs into the",
+                "horizontal ledges and shelves real terrain has. Minecraft's own 3D noise runs at 0.5."
+            )
+            .translation("barrenskies.configuration.landformSquash")
+            .defineInRange("landformSquash", 0.55D, 0.1D, 2.0D);
 
         ISLAND_CAVES = b
             .comment(

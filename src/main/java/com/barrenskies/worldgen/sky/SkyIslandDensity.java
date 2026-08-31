@@ -34,12 +34,13 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_RIDGES = noise("island_ridges");
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_DETAIL = noise("island_detail");
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_CAVES = noise("island_caves");
+    public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_LANDFORM = noise("island_landform");
 
     /**
      * Fine surface texture, in density units. One unit moves the surface a whole layer reach, so this is
      * about a block and a half of undulation.
      */
-    private static final double DETAIL_STRENGTH = 0.03D;
+    private static final double DETAIL_STRENGTH = 0.038D;
 
     /** Extra reach given to the biome mask so island edges are never left reporting the ground biome. */
     public static final double BIOME_MASK_MARGIN = 0.08D;
@@ -54,7 +55,7 @@ public final class SkyIslandDensity {
      * the island density passes one over this, so a larger number leaves a thinner skin of solid rock.
      * Ten works out at roughly four blocks.
      */
-    private static final double SKIN_FADE = 10.0D;
+    private static final double SKIN_FADE = 8.0D;
 
     /**
      * Vertical distance from a layer to where its rock has completely faded out.
@@ -104,6 +105,7 @@ public final class SkyIslandDensity {
         Holder<NormalNoise.NoiseParameters> ridges,
         Holder<NormalNoise.NoiseParameters> detail,
         Holder<NormalNoise.NoiseParameters> caveNoise,
+        Holder<NormalNoise.NoiseParameters> landformNoise,
         int bandBottom,
         int bandTop,
         int layerCount,
@@ -175,6 +177,12 @@ public final class SkyIslandDensity {
             combined = DensityFunctions.max(combined, layers.get(i));
         }
 
+        // Added after the layers combine rather than inside each of them. Adding the same value to every
+        // layer before taking the greater of them gives the same answer, so this is the cheaper spelling.
+        if (com.barrenskies.BarrenSkiesConfig.LANDFORM_NOISE.get()) {
+            combined = DensityFunctions.add(combined, landform(landformNoise));
+        }
+
         if (com.barrenskies.BarrenSkiesConfig.ISLAND_CAVES.get()) {
             combined = DensityFunctions.add(combined, caves(caveNoise, combined));
         }
@@ -186,6 +194,25 @@ public final class SkyIslandDensity {
         // Interpolated across noise cells, the way the game interpolates its own terrain. Without this the
         // per-column caching below shows through as flat square steps rather than a smooth surface.
         return DensityFunctions.interpolated(DensityFunctions.mul(combined, DensityFunctions.constant(SCALE)));
+    }
+
+    /**
+     * The three dimensional term that stops an island being a height field.
+     *
+     * <p>Minecraft's own terrain is a depth gradient with a 3D noise added to it, and that noise is the
+     * whole reason ground has overhangs, ledges and broken edges rather than being a surface with texture
+     * on it. Islands had only the fine detail noise, which is the same idea an order of magnitude too weak
+     * to change any shape, and that is most of why they read as smooth and round.
+     *
+     * <p>The vertical squash matters as much as the strength. Sampling the noise more slowly in Y than
+     * across it stretches every feature into a horizontal shelf; sampled evenly it just scatters round
+     * lumps. Vanilla runs its own 3D noise at half the vertical frequency for exactly this reason.
+     */
+    private static DensityFunction landform(Holder<NormalNoise.NoiseParameters> landformNoise) {
+        return DensityFunctions.mul(
+            DensityFunctions.noise(landformNoise, 1.0D, com.barrenskies.BarrenSkiesConfig.LANDFORM_SQUASH.get()),
+            DensityFunctions.constant(com.barrenskies.BarrenSkiesConfig.LANDFORM_STRENGTH.get())
+        );
     }
 
     /**
@@ -206,9 +233,9 @@ public final class SkyIslandDensity {
         );
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve =
             CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(field)
-                .addPoint(-0.05F, 0.1F, 0.0F)
-                .addPoint(0.0F, -1.5F, 0.0F)
-                .addPoint(0.05F, 0.1F, 0.0F)
+                .addPoint(-0.035F, 0.1F, 0.0F)
+                .addPoint(0.0F, -2.5F, 0.0F)
+                .addPoint(0.035F, 0.1F, 0.0F)
                 .build();
         // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
         DensityFunction cut = DensityFunctions.min(
@@ -245,12 +272,12 @@ public final class SkyIslandDensity {
             CubicSpline.builder(ridge);
         // Three deck heights rather than two, so a landmass steps between levels instead of being one
         // uniform plate. The transitions stay narrow, which is what makes them read as cliffs.
-        spline.addPoint(-1.00F, top(inland, 0.470F, 0.520F));
-        spline.addPoint(-0.35F, top(inland, 0.700F, 0.770F));
-        spline.addPoint(-0.25F, top(inland, 0.255F, 0.280F));
-        spline.addPoint(0.25F, top(inland, 0.255F, 0.280F));
-        spline.addPoint(0.35F, top(inland, 0.700F, 0.770F));
-        spline.addPoint(1.00F, top(inland, 0.470F, 0.520F));
+        spline.addPoint(-1.00F, top(inland, 1.095F, 1.240F));
+        spline.addPoint(-0.49F, top(inland, 0.380F, 0.610F));
+        spline.addPoint(-0.12F, top(inland, 0.125F, 0.160F));
+        spline.addPoint(0.12F, top(inland, 0.125F, 0.160F));
+        spline.addPoint(0.49F, top(inland, 0.380F, 0.610F));
+        spline.addPoint(1.00F, top(inland, 1.095F, 1.240F));
         return DensityFunctions.spline(spline.build());
     }
 
