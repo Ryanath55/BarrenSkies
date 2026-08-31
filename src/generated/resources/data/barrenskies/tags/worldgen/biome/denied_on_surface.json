@@ -25,6 +25,14 @@
       "required": false
     },
     {
+      "id": "minecraft:frozen_river",
+      "required": false
+    },
+    {
+      "id": "minecraft:snowy_beach",
+      "required": false
+    },
+    {
       "id": "terralith:frozen_cliffs",
       "required": false
     }

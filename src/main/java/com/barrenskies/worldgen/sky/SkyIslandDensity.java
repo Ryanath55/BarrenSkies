@@ -38,7 +38,7 @@ public final class SkyIslandDensity {
 
     /**
      * Fine surface texture, in density units. One unit moves the surface a whole layer reach, so this is
-     * about a block and a half of undulation.
+     * about a block and a half of undulation. The landform noise below is the same idea at landform scale.
      */
     private static final double DETAIL_STRENGTH = 0.038D;
 
@@ -53,7 +53,7 @@ public final class SkyIslandDensity {
     /**
      * How sharply cave carving is faded out towards the island surface. Carving reaches full strength once
      * the island density passes one over this, so a larger number leaves a thinner skin of solid rock.
-     * Ten works out at roughly four blocks.
+     * Eight works out at roughly five blocks.
      */
     private static final double SKIN_FADE = 8.0D;
 
@@ -62,7 +62,7 @@ public final class SkyIslandDensity {
      *
      * <p>Islands therefore reach this far below the configured floor, which the biome side has to allow
      * for. Switching pools at the floor itself left the underside of every island taking barren biomes.
-     */;
+     */
     public static int layerReach() {
         return com.barrenskies.BarrenSkiesConfig.ISLAND_THICKNESS.get();
     }
@@ -114,12 +114,11 @@ public final class SkyIslandDensity {
     ) {
         // Ridge noise varies the island surface across a landmass. Cached per column, since it has no
         // height component and would otherwise be recomputed for every block in the column.
-        // Half our own noise, half the ridge field the world itself uses. Blending it in means island
-        // terraces follow the same lines the ground terrain does, so a terrain mod shapes the islands as
-        // well as the ground rather than only supplying their biomes.
-        // Our own ridge noise alone. Blending the world ridge field in here narrowed the spread of the
-        // combined value, so it rarely crossed the narrow bands that cut the terraces, and the islands went
-        // back to being smooth domes. Two noises averaged are flatter than either.
+        //
+        // Deliberately our own noise alone. Averaging it with the world's own ridge field, so that island
+        // terraces would follow the ground's, narrowed the spread of the result: it then rarely reached the
+        // bands that cut the terraces and the islands went back to smooth domes. Two noises averaged are
+        // flatter than either.
         DensityFunction ridgeField = DensityFunctions.flatCache(
             DensityFunctions.shiftedNoise2d(DensityFunctions.zero(), DensityFunctions.zero(), 1.0D, ridges)
         );
@@ -169,7 +168,7 @@ public final class SkyIslandDensity {
             DensityFunction fadeDown = DensityFunctions.add(
                 DensityFunctions.yClampedGradient(centre - reach * 2, centre, -2.0D, 0.0D), bottom
             );
-            layers.add(DensityFunctions.add(DensityFunctions.min(fadeUp, fadeDown), detailField));
+            layers.add(DensityFunctions.min(fadeUp, fadeDown));
         }
 
         DensityFunction combined = layers.getFirst();
@@ -177,14 +176,19 @@ public final class SkyIslandDensity {
             combined = DensityFunctions.max(combined, layers.get(i));
         }
 
-        // Added after the layers combine rather than inside each of them. Adding the same value to every
-        // layer before taking the greater of them gives the same answer, so this is the cheaper spelling.
+        // Both 3D terms are added once, after the layers combine, rather than once inside each of them.
+        // Adding the same value to every layer and then taking the greater gives the same answer, so with
+        // four layers this is the same shape for a quarter of the noise lookups.
+        combined = DensityFunctions.add(combined, detailField);
         if (com.barrenskies.BarrenSkiesConfig.LANDFORM_NOISE.get()) {
             combined = DensityFunctions.add(combined, landform(landformNoise));
         }
 
         if (com.barrenskies.BarrenSkiesConfig.ISLAND_CAVES.get()) {
-            combined = DensityFunctions.add(combined, caves(caveNoise, combined));
+            // Cached first, because the carve reads it a second time to work out how deep under the
+            // surface it is. Without this the whole layer stack above is evaluated twice per block.
+            DensityFunction rock = DensityFunctions.cacheOnce(combined);
+            combined = DensityFunctions.add(rock, caves(caveNoise, rock));
         }
         // Scaled up before being handed to the world. The island field naturally sits within about plus or
         // minus one, but it is combined with the world density by taking the greater of the two, and open

@@ -53,9 +53,16 @@ public final class BarrenSkiesDataGen {
      */
     private static final List<String> NEVER_PAINTED = List.of("terralith:red_oasis", "terralith:desert_oasis");
 
-    /** Frozen oceans read as jarring against an otherwise hot, barren surface. */
+    /**
+     * Frozen water reads as jarring against an otherwise hot, barren surface.
+     *
+     * <p>Denying one of these no longer turns it into desert. A biome tied to water is now replaced by
+     * another of its own kind, so a frozen ocean becomes a warmer ocean and a frozen river a warmer
+     * river, and the water stays where the terrain put it.
+     */
     private static final List<String> UNWANTED_ON_SURFACE = List.of(
-        "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean", "terralith:frozen_cliffs"
+        "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean", "minecraft:frozen_river",
+        "minecraft:snowy_beach", "terralith:frozen_cliffs"
     );
 
     /**

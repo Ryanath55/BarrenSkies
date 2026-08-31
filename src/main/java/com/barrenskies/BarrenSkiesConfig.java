@@ -48,7 +48,7 @@ public final class BarrenSkiesConfig {
                 "That is not something this mod controls, and it means altitude decides how frozen an island",
                 "looks far more than its biome does:",
                 "  up to Y 360 : nearly every biome looks as it should",
-                "  Y 360-560   : cool biomes turn snowy, warm ones are fine (default top is 520)",
+                "  Y 360-560   : cool biomes turn snowy, warm ones are fine (default top is 560)",
                 "  above Y 600 : everything freezes over, including jungles",
                 "The band is squeezed from both sides: the ground reaches Y 320 and must be cleared, while",
                 "temperature freezes everything above about Y 600. That, not world height, is what limits it."
@@ -89,8 +89,8 @@ public final class BarrenSkiesConfig {
                 "How far an island reaches above and below its layer, in blocks.",
                 "This is the single biggest control over how round an island looks. A thick island has a deep",
                 "bowl underneath it, and a deep bowl is a large curve, so it reads as round however level the",
-                "top is. The deck sits about three quarters of this above the layer and the bowl reaches",
-                "almost all of it below, so 44 gives an island roughly 75 blocks thick.",
+                "top is. How far the deck sits above the layer depends on the ridge, and the bowl reaches",
+                "almost all of this below it, so 42 gives islands from about 60 to 95 blocks thick.",
                 "Raising this also spreads the layers further apart, since islands need the room."
             )
             .translation("barrenskies.configuration.islandThickness")

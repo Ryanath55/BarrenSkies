@@ -103,15 +103,20 @@ public class LayeredBiomeSource extends BiomeSource {
             (entry.getFirst().depth().min() > 0L ? caves : surface).add(entry);
         }
 
-        // The substitutes we draw from: vanilla's own hot, rainless land biomes (desert and the badlands family).
-        List<Pair<Climate.ParameterPoint, Holder<Biome>>> aridPalette =
-            aridPalette(surface, oceanContinentalnessMax, aridTemperatureMin, aridRequiresNoRain);
+        // One palette per kind. A denied ocean is replaced by an ocean, a denied river by a river, and only
+        // ordinary land is replaced by the hot, rainless biomes the barren surface is made of.
+        java.util.EnumMap<Kind, List<Pair<Climate.ParameterPoint, Holder<Biome>>>> palettes =
+            new java.util.EnumMap<>(Kind.class);
+        palettes.put(Kind.LAND, aridPalette(surface, oceanContinentalnessMax, aridTemperatureMin, aridRequiresNoRain));
+        for (Kind kind : new Kind[] {Kind.OCEAN, Kind.RIVER, Kind.BEACH}) {
+            palettes.put(kind, waterPalette(surface, kind));
+        }
 
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> lower = new ArrayList<>(caves);
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> sky = new ArrayList<>(surface);
         int substituted = 0;
 
-        if (aridPalette.isEmpty()) {
+        if (palettes.get(Kind.LAND).isEmpty()) {
             // Nothing to swap in, so leave the surface vanilla rather than shipping a broken climate space.
             BarrenSkies.LOG.warn("No arid biomes matched the current config; leaving the barren surface as vanilla.");
             lower.addAll(surface);
@@ -119,20 +124,28 @@ public class LayeredBiomeSource extends BiomeSource {
             for (Pair<Climate.ParameterPoint, Holder<Biome>> entry : surface) {
                 // Every climate point keeps its slot. Only the biome attached to it changes, so the terrain
                 // shape the noise router builds always agrees with the biome the debug screen reports.
-                if (keepOnSurface(entry, oceanContinentalnessMax, aridTemperatureMin, aridRequiresNoRain)) {
+                Kind kind = Kind.of(entry.getSecond());
+                if (keepOnSurface(entry, kind, oceanContinentalnessMax, aridTemperatureMin, aridRequiresNoRain)) {
                     lower.add(entry);
-                } else {
-                    lower.add(Pair.of(entry.getFirst(), nearestAridBiome(entry.getFirst(), aridPalette)));
-                    substituted++;
+                    continue;
                 }
+                List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette = palettes.get(kind);
+                if (palette.isEmpty()) {
+                    // Nothing of the right kind to swap in. Keeping a biome we would rather not have beats
+                    // putting land in the water, which is the failure that actually breaks structures.
+                    lower.add(entry);
+                    continue;
+                }
+                lower.add(Pair.of(entry.getFirst(), nearest(entry.getFirst(), palette, LayeredBiomeSource::shapeDistance)));
+                substituted++;
             }
         }
 
         BarrenSkies.LOG.info(
-            "Barren Skies surface: {} of {} climate points rewritten to arid, palette of {}. Resulting biomes: {}",
+            "Barren Skies surface: {} of {} climate points substituted, arid palette of {}. Resulting biomes: {}",
             substituted,
             surface.size(),
-            aridPalette.size(),
+            palettes.get(Kind.LAND).size(),
             lower.stream()
                 .skip(caves.size())
                 .map(entry -> entry.getSecond().unwrapKey().map(key -> key.location().toString()).orElse("?"))
@@ -149,13 +162,11 @@ public class LayeredBiomeSource extends BiomeSource {
         // neither do oceans or beaches, which need a shoreline to make sense.
         Set<Holder<Biome>> barren = new LinkedHashSet<>();
         lower.stream().skip(caves.size()).forEach(entry -> barren.add(entry.getSecond()));
+        // Oceans, rivers and beaches all need a shoreline or a valley to make sense of them; on an island
+        // they are just misnamed ground. Dry land only up there.
         java.util.function.Predicate<Holder<Biome>> suitsSky =
             biome -> !barren.contains(biome)
-                && !isWater(biome)
-                && !biome.is(BiomeTags.IS_BEACH)
-                // Rivers need a valley to run along and a sea to reach. As an island they are just a
-                // misnamed patch of ground.
-                && !biome.is(BiomeTags.IS_RIVER)
+                && Kind.of(biome) == Kind.LAND
                 && !biome.is(BarrenSkiesTags.DENIED_IN_SKY);
 
         // The island pool is remapped the same way the surface is, rather than filtered. Dropping entries
@@ -166,7 +177,7 @@ public class LayeredBiomeSource extends BiomeSource {
             List<Pair<Climate.ParameterPoint, Holder<Biome>>> remapped = new ArrayList<>(sky.size());
             for (Pair<Climate.ParameterPoint, Holder<Biome>> entry : sky) {
                 remapped.add(
-                    suitsSky.test(entry.getSecond()) ? entry : Pair.of(entry.getFirst(), nearestBiome(entry.getFirst(), skyPalette))
+                    suitsSky.test(entry.getSecond()) ? entry : Pair.of(entry.getFirst(), nearest(entry.getFirst(), skyPalette, LayeredBiomeSource::climateDistance))
                 );
             }
             sky = remapped;
@@ -194,8 +205,35 @@ public class LayeredBiomeSource extends BiomeSource {
         );
     }
 
+    /**
+     * How a biome relates to water.
+     *
+     * <p>This is the distinction that decides what a biome may be replaced by, and getting it wrong is
+     * what put villages in rivers. Terrain shape comes from the density functions and knows nothing about
+     * this substitution, so a river is a water-filled channel whether or not we call it a desert. Swap the
+     * biome for a land one and every structure that trusts the biome — which is all of them — places on
+     * water. A biome tied to water therefore only ever gets swapped for another biome of the same kind.
+     */
+    private enum Kind {
+        OCEAN, RIVER, BEACH, LAND;
+
+        static Kind of(Holder<Biome> biome) {
+            if (biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_DEEP_OCEAN)) {
+                return OCEAN;
+            }
+            if (biome.is(BiomeTags.IS_RIVER)) {
+                return RIVER;
+            }
+            if (biome.is(BiomeTags.IS_BEACH)) {
+                return BEACH;
+            }
+            return LAND;
+        }
+    }
+
     private static boolean keepOnSurface(
-        Pair<Climate.ParameterPoint, Holder<Biome>> entry, long oceanContinentalnessMax, long aridTemperatureMin, boolean aridRequiresNoRain
+        Pair<Climate.ParameterPoint, Holder<Biome>> entry, Kind kind,
+        long oceanContinentalnessMax, long aridTemperatureMin, boolean aridRequiresNoRain
     ) {
         Holder<Biome> biome = entry.getSecond();
         if (biome.is(BarrenSkiesTags.DENIED_ON_SURFACE)) {
@@ -204,18 +242,25 @@ public class LayeredBiomeSource extends BiomeSource {
         if (biome.is(BarrenSkiesTags.ALLOWED_ON_SURFACE)) {
             return true;
         }
-        // Ocean generation is left exactly as the base worldgen made it.
-        return isWater(biome) || isOceanic(entry.getFirst(), oceanContinentalnessMax) || isArid(entry, aridTemperatureMin, aridRequiresNoRain);
+        // Anything tied to water keeps its place. Only a denied one is swapped, and only for its own kind.
+        if (kind != Kind.LAND) {
+            return true;
+        }
+        return isOceanic(entry.getFirst(), oceanContinentalnessMax) || isArid(entry, aridTemperatureMin, aridRequiresNoRain);
     }
 
     /**
-     * Water biomes are identified by tag rather than by climate. The continentalness where terrain drops
-     * below sea level moves when another mod supplies the density functions, but the tags stay accurate.
+     * The acceptable biomes of one water-tied kind, used to replace a denied ocean, river or beach with
+     * one we do want rather than with dry land.
      */
-    private static boolean isWater(Holder<Biome> biome) {
-        // Oceans only. Rivers and beaches follow the land they cut through, so a frozen river or snowy
-        // beach surviving in the middle of a desert reads as a bug rather than as variety.
-        return biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_DEEP_OCEAN);
+    private static List<Pair<Climate.ParameterPoint, Holder<Biome>>> waterPalette(
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> surface, Kind kind
+    ) {
+        return surface.stream()
+            .filter(entry -> Kind.of(entry.getSecond()) == kind)
+            .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.DENIED_ON_SURFACE))
+            .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.NEVER_PAINTED))
+            .toList();
     }
 
     /**
@@ -230,7 +275,9 @@ public class LayeredBiomeSource extends BiomeSource {
             // A denied biome must not come back as a substitute either, or it reappears in someone else's slot.
             .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.DENIED_ON_SURFACE))
             .filter(entry -> !entry.getSecond().is(BarrenSkiesTags.NEVER_PAINTED))
-            .filter(entry -> !isWater(entry.getSecond()))
+            // Dry land only. A beach or river used as an arid substitute would be painted across ground
+            // that has no shoreline anywhere near it.
+            .filter(entry -> Kind.of(entry.getSecond()) == Kind.LAND)
             .filter(entry -> !isOceanic(entry.getFirst(), oceanContinentalnessMax))
             .filter(entry -> !aridRequiresNoRain || !entry.getSecond().value().hasPrecipitation())
             .toList();
@@ -277,19 +324,18 @@ public class LayeredBiomeSource extends BiomeSource {
         return (parameter.min() + parameter.max()) / 2L;
     }
 
-    /** Nearest entry across the whole climate space, used when swapping one biome pool for another. */
-    private static Holder<Biome> nearestBiome(Climate.ParameterPoint point, List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette) {
+    /** The closest biome in a palette under the given idea of closeness. */
+    private static Holder<Biome> nearest(
+        Climate.ParameterPoint point,
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette,
+        java.util.function.ToLongBiFunction<Climate.ParameterPoint, Climate.ParameterPoint> distance
+    ) {
         Holder<Biome> best = palette.getFirst().getSecond();
         long bestDistance = Long.MAX_VALUE;
         for (Pair<Climate.ParameterPoint, Holder<Biome>> candidate : palette) {
-            Climate.ParameterPoint other = candidate.getFirst();
-            long distance = square(gap(point.temperature(), other.temperature()))
-                + square(gap(point.humidity(), other.humidity()))
-                + square(gap(point.continentalness(), other.continentalness()))
-                + square(gap(point.erosion(), other.erosion()))
-                + square(gap(point.weirdness(), other.weirdness()));
-            if (distance < bestDistance) {
-                bestDistance = distance;
+            long measured = distance.applyAsLong(point, candidate.getFirst());
+            if (measured < bestDistance) {
+                bestDistance = measured;
                 best = candidate.getSecond();
             }
         }
@@ -297,28 +343,27 @@ public class LayeredBiomeSource extends BiomeSource {
     }
 
     /**
-     * Picks the arid biome vanilla would put on this shape of ground, so plateaus stay badlands, eroded
-     * ground stays eroded, and so on.
+     * Distance across the terrain-shape axes only, for picking a replacement on the barren surface. It
+     * ignores temperature and humidity because those are exactly what the substitution is overriding, so
+     * a plateau stays badlands and eroded ground stays eroded.
      */
-    private static Holder<Biome> nearestAridBiome(Climate.ParameterPoint point, List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette) {
-        Holder<Biome> best = palette.getFirst().getSecond();
-        long bestDistance = Long.MAX_VALUE;
-        for (Pair<Climate.ParameterPoint, Holder<Biome>> candidate : palette) {
-            long distance = shapeDistance(point, candidate.getFirst());
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = candidate.getSecond();
-            }
-        }
-        return best;
-    }
-
-    /** Distance across the terrain-shape axes only. Temperature and humidity are what we are deliberately overriding. */
     private static long shapeDistance(Climate.ParameterPoint a, Climate.ParameterPoint b) {
         return square(gap(a.continentalness(), b.continentalness()))
             + square(gap(a.erosion(), b.erosion()))
             + square(gap(a.weirdness(), b.weirdness()))
             + square(gap(a.depth(), b.depth()));
+    }
+
+    /**
+     * Distance across the whole climate space, for picking a replacement in the sky. Up there temperature
+     * and humidity are worth keeping: a jungle slot should become another warm, wet biome.
+     */
+    private static long climateDistance(Climate.ParameterPoint a, Climate.ParameterPoint b) {
+        return square(gap(a.temperature(), b.temperature()))
+            + square(gap(a.humidity(), b.humidity()))
+            + square(gap(a.continentalness(), b.continentalness()))
+            + square(gap(a.erosion(), b.erosion()))
+            + square(gap(a.weirdness(), b.weirdness()));
     }
 
     private static long gap(Climate.Parameter from, Climate.Parameter to) {
