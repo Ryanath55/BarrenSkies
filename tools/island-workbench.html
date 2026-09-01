@@ -682,7 +682,7 @@ var DEFAULTS = {
 
   streamsOn: true, streamCell: 192, streamChance: 70, streamLength: 160, streamMinRun: 20,
   streamInland: 0.15, streamFollow: 0.75, streamWiggle: 0.05, streamWidth: 2,
-  streamDepth: 5, streamSlope: 0.05, streamMaxCut: 14, streamCliff: 8,
+  streamDepth: 5, streamSlope: 0.05, streamMaxCut: 14, streamCliff: 8, streamDryLip: 3,
   streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
@@ -993,15 +993,17 @@ function planStream(cellX, cellZ) {
 /** Every column the channel touches, with the elevation its floor is cut to there. */
 function streamPath(plan) {
   var out = [];
+  var lastWet = plan.nodes.length - 1 - S.streamDryLip;
   for (var k = 0; k < plan.nodes.length; k++) {
     var n = plan.nodes[k];
     var sideX = Math.cos(n.angle), sideZ = -Math.sin(n.angle);
     for (var off = -n.half; off <= n.half; off++) {
       var d = Math.abs(off);
       if (n.cut - d < 1) continue;
-      // V shaped: the floor steps up a block for every block out from the middle.
+      // V shaped: the floor steps up a block for every block out from the middle. The last few nodes are
+      // cut like the rest but carry no source, so what goes over the edge is water already moving.
       out.push({ x: Math.floor(n.x + sideX * off), z: Math.floor(n.z + sideZ * off),
-                 floor: n.bed + d, cut: n.cut - d, along: n.along });
+                 floor: n.bed + d, cut: n.cut - d, along: n.along, wet: k <= lastWet });
     }
   }
   return out;
@@ -1338,7 +1340,7 @@ function buildGrid(fast) {
              S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
              S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
              S.streamInland, S.streamFollow, S.streamWiggle, S.streamWidth,
-             S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamCliff].join("|");
+             S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamCliff, S.streamDryLip].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
@@ -1427,7 +1429,7 @@ function buildGrid(fast) {
         if (floorY < surf[q] - S.streamMaxCut) floorY = surf[q] - S.streamMaxCut;
         surf[q] = floorY;
         if (sTop[q * MAXSPANS] > floorY) sTop[q * MAXSPANS] = floorY;
-        wet[q] = 1;
+        if (node.wet) wet[q] = 1;
       }
     }
   }
@@ -1754,6 +1756,8 @@ var GROUPS = [
         note: "The bed drops at least this much every block even where the ground is level, which is what keeps water moving across a deck. Over level ground alone it is this times the run." },
       { k: "streamMaxCut", label: "Deepest cut", min: 4, max: 40, step: 1, dp: 0,
         note: "Where the ground climbs, the bed holds and the channel deepens instead. Past this the plan is abandoned rather than trenched through, so lowering it throws away streams that would have to cut a gorge." },
+      { k: "streamDryLip", label: "Dry lip", min: 0, max: 12, step: 1, dp: 0,
+        note: "Blocks before the drop that are cut but given no source, so what goes over the edge is water already flowing rather than a still block sitting on the brink. Flow only reaches seven blocks over level ground, so a long lip risks a dry channel where it shows most." },
       { k: "streamCliff", label: "Steepest fall it follows", min: 2, max: 30, step: 1, dp: 0,
         note: "Ground that drops faster than this in a block is the lip of a fall, and the channel stops there rather than chasing it down. It is also what keeps a stream from carrying on across a second island sixty blocks below the one it started on." },
       { k: "streamOct", label: "Waver noise octave", min: -10, max: -4, step: 1, dp: 0 }
@@ -1949,7 +1953,8 @@ function writeOut() {
                followsSlope: round(S.streamFollow, 3), waver: round(S.streamWiggle, 4),
                widthAtEdge: S.streamWidth, depthAtEdge: S.streamDepth,
                leastFallPerBlock: round(S.streamSlope, 3), deepestCut: S.streamMaxCut,
-               steepestFallFollowed: S.streamCliff, waverOctave: S.streamOct,
+               steepestFallFollowed: S.streamCliff, dryLip: S.streamDryLip,
+               waverOctave: S.streamOct,
                visibleHere: lastStreams, medianRun: lastStreamRun, medianFall: lastStreamFall },
     landformNoise: { enabled: S.t3On, strength: round(S.t3Strength, 4), firstOctave: S.t3Oct,
                      verticalSquash: round(S.t3Squash, 3),

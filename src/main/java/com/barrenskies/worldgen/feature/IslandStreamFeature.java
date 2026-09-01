@@ -108,6 +108,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final double CLIFF = 8.0D;
 
     /**
+     * How much of the channel before the drop is cut but left without a source of its own.
+     *
+     * <p>So that what goes over the edge is water already in motion. A source is a full block that never
+     * drains, and one sitting on the brink is a still cube of water at the rim with the fall hanging under
+     * it; flow arriving there is half a block high and carries the moving face, which is what an edge with a
+     * stream running over it looks like. It also keeps sources off the rim itself, which is where they
+     * spread sideways and came out as a curtain the first time round.
+     *
+     * <p>Kept short deliberately. Flow reaches seven blocks over level ground before it dies, and the last
+     * stretch of a run is usually falling rather than level, but a long dry lip is a channel with no water
+     * in the part of it that shows most.
+     */
+    private static final int DRY_LIP = 3;
+
+    /**
      * Cells either side of a chunk's own that are checked for streams reaching into it.
      *
      * <p>A head can sit anywhere in its cell and climb a little outside it, and the run is up to LENGTH
@@ -391,9 +406,13 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         int reach = SkyIslandDensity.layerReach();
         int bandBottom = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - reach;
         int bandTop = BarrenSkiesConfig.SKY_ISLAND_TOP.get() + reach * 2;
+        List<Node> nodes = plan.nodes();
+        int lastWet = nodes.size() - 1 - DRY_LIP;
         boolean carved = false;
 
-        for (Node node : plan.nodes()) {
+        for (int step = 0; step < nodes.size(); step++) {
+            Node node = nodes.get(step);
+            boolean source = step <= lastWet;
             // Across the channel, perpendicular to where it is pointing.
             double sideX = Math.cos(node.angle());
             double sideZ = -Math.sin(node.angle());
@@ -421,7 +440,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 int floor = (int) Math.floor(node.bed() + Math.abs(offset));
                 floor = Math.min(floor, surface - 1);
                 floor = Math.max(floor, surface - MAX_CUT);
-                cut(level, x, z, surface, floor);
+                cut(level, x, z, surface, floor, source);
                 carved = true;
             }
         }
@@ -448,27 +467,33 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /**
-     * Opens one column of the channel and lays water in the bottom of it.
+     * Opens one column of the channel, and lays water in the bottom of it unless this is the lip.
      *
-     * <p>One block of water, not a filled channel, and only at the floor. An earlier version filled the
-     * whole width with source blocks, and a source never drains: fourteen blocks of them side by side at an
-     * island edge emptied over it all at once and came out as a curtain rather than a stream.
+     * <p>The channel is cut to the same floor either way, and the floor is always given something to stand
+     * on. That matters more than it looks: water will not flow uphill, so if the dry columns kept their bed
+     * where the wet ones keep their water, the flow would meet a one block step at the brink and stop dead
+     * a stride short of going over.
+     *
+     * <p>One block of water, never a filled channel. An earlier version filled the whole width with source
+     * blocks, and a source never drains: fourteen of them side by side at an island edge emptied over it all
+     * at once and came out as a curtain rather than a stream.
      */
-    private static void cut(WorldGenLevel level, int x, int z, int surface, int floor) {
+    private static void cut(WorldGenLevel level, int x, int z, int surface, int floor, boolean source) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        for (int y = surface; y > floor; y--) {
+        for (int y = surface; y >= floor; y--) {
             pos.set(x, y, z);
             if (!level.getBlockState(pos).isAir()) {
                 level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
             }
         }
-        pos.set(x, floor, z);
-        level.setBlock(pos, Blocks.WATER.defaultBlockState(), 2);
-        level.scheduleTick(pos, Fluids.WATER, 0);
-
         pos.set(x, floor - 1, z);
         if (level.getBlockState(pos).isAir()) {
             level.setBlock(pos, Blocks.STONE.defaultBlockState(), 2);
+        }
+        if (source) {
+            pos.set(x, floor, z);
+            level.setBlock(pos, Blocks.WATER.defaultBlockState(), 2);
+            level.scheduleTick(pos, Fluids.WATER, 0);
         }
     }
 
