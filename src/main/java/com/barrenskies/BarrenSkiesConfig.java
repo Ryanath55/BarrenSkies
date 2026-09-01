@@ -119,7 +119,7 @@ public final class BarrenSkiesConfig {
                 "tearing islands into separate fragments."
             )
             .translation("barrenskies.configuration.landformStrength")
-            .defineInRange("landformStrength", 0.15D, 0.0D, 0.6D);
+            .defineInRange("landformStrength", 0.24D, 0.0D, 0.6D);
 
         LANDFORM_SQUASH = b
             .comment(
@@ -128,7 +128,7 @@ public final class BarrenSkiesConfig {
                 "horizontal ledges and shelves real terrain has. Minecraft's own 3D noise runs at 0.5."
             )
             .translation("barrenskies.configuration.landformSquash")
-            .defineInRange("landformSquash", 0.55D, 0.1D, 2.0D);
+            .defineInRange("landformSquash", 0.40D, 0.1D, 2.0D);
 
         ISLAND_CAVES = b
             .comment(
@@ -160,7 +160,7 @@ public final class BarrenSkiesConfig {
                 "count on finding is not worth flying to. At 30 most of the sky is dry."
             )
             .translation("barrenskies.configuration.waterfallIslandChance")
-            .defineInRange("waterfallIslandChance", 90, 0, 100);
+            .defineInRange("waterfallIslandChance", 100, 0, 100);
 
         STREAM_DEPTH = b
             .comment(
@@ -170,7 +170,7 @@ public final class BarrenSkiesConfig {
                 "banks read as a gorge rather than a ditch."
             )
             .translation("barrenskies.configuration.streamDepth")
-            .defineInRange("streamDepth", 4, 2, 12);
+            .defineInRange("streamDepth", 3, 2, 12);
 
         WATERFALLS_ONLY_OVER_WATER = b
             .comment(

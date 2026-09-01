@@ -52,10 +52,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int CELL = 160;
 
     /** How far a stream runs before it gives up, if the island has not already ended under it. */
-    private static final int LENGTH = 120;
+    private static final int LENGTH = 140;
 
     /** Shorter than this is a notch in a rim, not a stream, so those plans are dropped. */
-    private static final int MIN_RUN = 12;
+    private static final int MIN_RUN = 14;
 
     /**
      * How far inside an island, by the mask, a head has to be.
@@ -64,7 +64,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * also the length control: a head further in has further to run before it finds an edge, at the cost of
      * fewer cells having anywhere that qualifies at all.
      */
-    private static final double INLAND = 0.17D;
+    private static final double INLAND = 0.35D;
 
     /** Air needed above a surface before it counts as open ground rather than the roof of a cave. */
     private static final int OPEN_SKY = 6;
@@ -89,22 +89,22 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int STEER_EVERY = 2;
 
     /** How much of the turn towards the lowest ground it actually takes each time it steers. */
-    private static final double FOLLOW = 0.30D;
+    private static final double FOLLOW = 0.25D;
 
     /** Noise added to the heading on top of the slope. Small: a waver, not a course of its own. */
-    private static final double WIGGLE = 0.015D;
+    private static final double WIGGLE = 0.045D;
 
     /** Half width in blocks at the drop, tapering to nothing at the head. */
     private static final int HALF_WIDTH = 1;
 
     /** The bed falls at least this much a block even over level ground, so water keeps moving on a deck. */
-    private static final double SLOPE = 0.02D;
+    private static final double SLOPE = 0.04D;
 
     /** Deeper than this and the plan is thrown away rather than cut as a trench. */
-    private static final int MAX_CUT = 9;
+    private static final int MAX_CUT = 6;
 
     /** Ground falling faster than this in a block is the lip of a fall, and the channel stops there. */
-    private static final double CLIFF = 5.0D;
+    private static final double CLIFF = 19.0D;
 
     /**
      * How much of the channel before the drop is cut but left without a source of its own.
@@ -119,7 +119,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * usually falling rather than level, but a long dry lip is a channel with no water in the part of it
      * that shows most.
      */
-    private static final int DRY_LIP = 5;
+    private static final int DRY_LIP = 2;
 
     /**
      * How far past its own half width a segment of channel reaches for columns.
@@ -154,7 +154,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int FLOOR_KEEP = 2;
 
     /** Below this many blocks of rock a column is the very brink and is left alone. */
-    private static final int MIN_THICKNESS = 3;
+    private static final int MIN_THICKNESS = 2;
 
     /** Column tables cover the chunk and a block of margin, so a pillar on the boundary is still seen. */
     private static final int SPAN = 18;
@@ -278,8 +278,8 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             );
         }
 
-        double heightAt(double x, double z) {
-            return at(x, z, -1).surfaceY();
+        double heightAt(double x, double z, int layer) {
+            return at(x, z, layer).surfaceY();
         }
     }
 
@@ -383,7 +383,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         double lowest = Double.POSITIVE_INFINITY;
         for (int spoke = 0; spoke < 12; spoke++) {
             double a = spoke / 12.0D * Math.PI * 2.0D;
-            double y = terrain.heightAt(px + Math.sin(a) * 24.0D, pz + Math.cos(a) * 24.0D);
+            double y = terrain.heightAt(px + Math.sin(a) * 24.0D, pz + Math.cos(a) * 24.0D, layer);
             if (y < lowest) {
                 lowest = y;
                 angle = a;
@@ -394,10 +394,11 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         double previous = 0.0D;
         for (int step = 0; step <= LENGTH; step++) {
             SkyIslandDensity.Ground ground = terrain.at(px, pz, layer);
-            // Two ways for the run to be over, and both of them are the lip of the fall: the island ending
-            // under it, or the ground dropping away faster than a channel could hold water on it. The
-            // second is what stops a stream carving a staircase down a face it should simply pour over.
-            if (ground.mask() <= 0.0D) {
+            // Three ways for the run to be over. The island ending under it, which is the lip of the fall.
+            // The ground dropping faster than a channel could hold water on it, which stops a stream
+            // carving a staircase down a face it should simply pour over. And a second island standing
+            // over this column, where a channel would be a trench in the floor of a cave.
+            if (ground.mask() <= 0.0D || ground.covered()) {
                 return nodes;
             }
             if (step > 0 && ground.surfaceY() < previous - CLIFF) {
@@ -412,7 +413,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 double bestY = Double.POSITIVE_INFINITY;
                 for (double turn : FAN) {
                     double y = terrain.heightAt(
-                        px + Math.sin(angle + turn) * FAN_REACH, pz + Math.cos(angle + turn) * FAN_REACH
+                        px + Math.sin(angle + turn) * FAN_REACH, pz + Math.cos(angle + turn) * FAN_REACH, layer
                     );
                     if (y < bestY) {
                         bestY = y;
@@ -526,16 +527,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static boolean claim(Columns columns, int slot, int wants) {
         int surface = columns.surface()[slot];
-        if (surface == NO_SURFACE || surface - columns.bottom()[slot] < MIN_THICKNESS - 1) {
+        int bottom = columns.bottom()[slot];
+        if (surface == NO_SURFACE || surface - bottom < MIN_THICKNESS - 1) {
             return false;
         }
         int floor = Math.min(wants, surface - 1);
         floor = Math.max(floor, surface - MAX_CUT);
-        // Leave rock under it, so the channel cannot open a slot through a rim; but groove the column
-        // rather than passing over it where the island is too thin to allow even that, because a column
-        // the channel leaves untouched stands in the middle of it as a pillar.
-        floor = Math.max(floor, columns.bottom()[slot] + FLOOR_KEEP);
-        floor = Math.min(floor, surface - 1);
+        // Leave rock under it, so the channel cannot open a slot through a rim.
+        floor = Math.max(floor, bottom + FLOOR_KEEP);
+        if (floor > surface - 1) {
+            // Too thin for a channel with rock to spare. Take what there is rather than passing over the
+            // column: one block of ground beneath the water and, where the island is thinner still, the
+            // surface block alone. Passing over it is what ended a channel short of the rim it was running
+            // for, since the columns too thin to cut are exactly the last few before an edge.
+            floor = Math.min(surface, Math.max(bottom + 1, surface - 1));
+        }
         if (columns.floor()[slot] == UNSCANNED || floor < columns.floor()[slot]) {
             columns.floor()[slot] = floor;
         }

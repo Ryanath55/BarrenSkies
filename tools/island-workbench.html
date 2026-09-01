@@ -676,15 +676,15 @@ var DEFAULTS = {
 
   detailOn: true, detailStrength: 0.038, detailOct: -5, detailAmp: [1, 0.6, 0.3],
 
-  t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
+  t3On: true, t3Strength: 0.24, t3Oct: -5, t3Squash: 0.4, t3Amp: [1, 0.5, 0.25],
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
 
-  streamsOn: true, streamCell: 160, streamChance: 90, streamLength: 120, streamMinRun: 12,
-  streamInland: 0.17, streamFollow: 0.3, streamWiggle: 0.015, streamWidth: 1,
-  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamCliff: 5, streamDryLip: 5,
-  streamOct: -7, streamAmp: [1, 0.4],
-  caveBand: 0.035, caveDepth: -2.5, skinFade: 8
+  streamsOn: true, streamCell: 160, streamChance: 100, streamLength: 140, streamMinRun: 14,
+  streamInland: 0.35, streamFollow: 0.25, streamWiggle: 0.045, streamWidth: 1,
+  streamDepth: 3, streamSlope: 0.04, streamMaxCut: 6, streamCliff: 19, streamDryLip: 2,
+  streamOct: -4, streamAmp: [1, 0.4],
+  caveBand: 0.05, caveDepth: -1.5, skinFade: 10
 };
 
 var S = clone(DEFAULTS);
@@ -810,7 +810,7 @@ function layerCentre(i) {
 
 /* Scratch, so that a probe allocates nothing. */
 var TOPO = { mask: 0, ridge: 0 };
-var GROUND = { y: 0, mask: 0, layer: -1 };
+var GROUND = { y: 0, mask: 0, layer: -1, covered: false };
 
 /**
  * The island surface at a column, from the height field alone, and how far inside an island it is.
@@ -829,7 +829,7 @@ var GROUND = { y: 0, mask: 0, layer: -1 };
 function groundAt(x, z, layer) {
   var ridge = S.ridgeOn ? noises.ridge.get(x, 0, z) : 0;
   var deck = deckCached();
-  var bestY = -Infinity, topMask = -Infinity, topLayer = -1, named = -Infinity;
+  var bestY = -Infinity, namedY = -Infinity, topMask = -Infinity, topLayer = -1, named = -Infinity;
   for (var i = 0; i < S.layers; i++) {
     var shift = i * 4096;
     var mask = noises.islands.get(x * S.hScale + shift, 0, z * S.hScale + shift) - S.threshold;
@@ -841,15 +841,16 @@ function groundAt(x, z, layer) {
     if (off <= 0) continue;
     var y = layerCentre(i) + off * S.reach;
     if (y > bestY) bestY = y;
+    if (i === layer) namedY = y;
   }
-  GROUND.y = bestY;
-  GROUND.mask = layer >= 0 ? named : topMask;
   GROUND.layer = topLayer;
+  if (layer < 0) { GROUND.y = bestY; GROUND.mask = topMask; GROUND.covered = false; return GROUND; }
+  GROUND.y = namedY; GROUND.mask = named; GROUND.covered = bestY > namedY;
   return GROUND;
 }
 
 /** Height only, for the probes that do not care about the mask. */
-function topoY(x, z) { return groundAt(x, z, -1).y; }
+function topoY(x, z, layer) { return groundAt(x, z, layer === undefined ? -1 : layer).y; }
 
 /** How far inside an island a column is, as the mask sees it. Negative outside one. */
 function islandStrength(x, z) {
@@ -886,7 +887,7 @@ function descend(sx, sz, layer, lane) {
   var angle = 0, lowest = Infinity;
   for (var s = 0; s < 12; s++) {
     var a = s / 12 * Math.PI * 2;
-    var y = topoY(px + Math.sin(a) * 24, pz + Math.cos(a) * 24);
+    var y = topoY(px + Math.sin(a) * 24, pz + Math.cos(a) * 24, layer);
     if (y < lowest) { lowest = y; angle = a; }
   }
 
@@ -894,10 +895,11 @@ function descend(sx, sz, layer, lane) {
   var prevY = 0;
   for (var step = 0; step <= S.streamLength; step++) {
     var g = groundAt(px, pz, layer);
-    // Two ways for the run to be over, and both of them are the lip of the fall: the island ending
-    // under it, or the ground dropping away faster than a channel could hold water on it. The second
-    // is what stops a stream carving a staircase down a cliff face it should simply pour over.
-    if (g.mask <= 0) return nodes;
+    // Three ways for the run to be over. The island ending under it, which is the lip of the fall. The
+    // ground dropping faster than a channel could hold water on it, which stops a stream carving a
+    // staircase down a face it should pour over. And a second island standing over this column, where
+    // a channel would be a trench in the floor of a cave.
+    if (g.mask <= 0 || g.covered) return nodes;
     if (step > 0 && g.y < prevY - S.streamCliff) return nodes;
     prevY = g.y;
     nodes.push({ x: px, z: pz, h: g.y, angle: angle });
@@ -906,7 +908,7 @@ function descend(sx, sz, layer, lane) {
       var bestTurn = 0, bestY = Infinity;
       for (var k = 0; k < STEER_FAN.length; k++) {
         var t = STEER_FAN[k];
-        var y2 = topoY(px + Math.sin(angle + t) * STEER_REACH, pz + Math.cos(angle + t) * STEER_REACH);
+        var y2 = topoY(px + Math.sin(angle + t) * STEER_REACH, pz + Math.cos(angle + t) * STEER_REACH, layer);
         if (y2 < bestY) { bestY = y2; bestTurn = t; }
       }
       angle += bestTurn * S.streamFollow;

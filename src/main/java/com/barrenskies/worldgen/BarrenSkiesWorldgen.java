@@ -99,11 +99,11 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 2.0D, 1.0D, 0.0D, 0.0D, 0.0D)
         );
-        // The vanilla-style landform term. Squashed vertically where it is used, which is what makes it
-        // cut ledges and shelves rather than scatter round lumps.
+        // The vanilla-style landform term, at about thirty-two blocks. Squashed vertically where it is
+        // used, which is what makes it cut ledges and shelves rather than scatter round lumps.
         context.register(
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_LANDFORM,
-            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-6, 1.0D, 0.5D, 0.25D)
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-5, 1.0D, 0.5D, 0.25D)
         );
         // Short wavelength, around sixteen blocks, so it reads as the small rises across a field rather than
         // as broad swells. A coarser noise here just tilts whole hillsides.
@@ -113,7 +113,7 @@ public final class BarrenSkiesWorldgen {
         );
         context.register(
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_STREAMS,
-            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 0.4D)
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-4, 1.0D, 0.4D)
         );
         // Cave tunnels are cut where this passes through zero, so its wavelength sets both the tunnel
         // spacing and, less obviously, the tunnel width. The carving spline dips over a fixed band of noise

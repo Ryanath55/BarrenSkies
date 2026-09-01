@@ -38,8 +38,8 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_LANDFORM = noise("island_landform");
 
     /**
-     * Where streams run across the island tops. Long wavelength, so a channel is a wide slow curve rather
-     * than a wiggle, and there are few enough of them that an island gets one or two rather than a network.
+     * The waver laid over a stream's heading. Short wavelength, so the line loosens over a few blocks
+     * rather than swinging the whole course one way; the slope decides where a channel goes, not this.
      */
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_STREAMS = noise("island_streams");
 
@@ -60,9 +60,9 @@ public final class SkyIslandDensity {
     /**
      * How sharply cave carving is faded out towards the island surface. Carving reaches full strength once
      * the island density passes one over this, so a larger number leaves a thinner skin of solid rock.
-     * Eight works out at roughly five blocks.
+     * Ten works out at roughly four blocks.
      */
-    private static final double SKIN_FADE = 8.0D;
+    private static final double SKIN_FADE = 10.0D;
 
     /**
      * Vertical distance from a layer to where its rock has completely faded out.
@@ -139,11 +139,14 @@ public final class SkyIslandDensity {
     /**
      * Where the island surface is at a column and how far inside an island that column is.
      *
-     * @param surfaceY the top of the rock, or negative infinity where no layer has ground here
-     * @param mask how far inside an island; of one named layer if one was named, otherwise the best of all
+     * @param surfaceY the top of the rock: of one named layer if one was named, otherwise of whichever
+     *     layer stands highest here. Negative infinity where the layer in question has no ground at all
+     * @param mask how far inside an island; again of the named layer, or the best of all of them
      * @param layer which layer is furthest inside here, whether or not a layer was named
+     * @param covered whether some other layer has ground above the named one, which is to say that this
+     *     column is under a second island rather than open to the sky
      */
-    public record Ground(double surfaceY, double mask, int layer) {
+    public record Ground(double surfaceY, double mask, int layer, boolean covered) {
         public boolean hasGround() {
             return this.surfaceY > Double.NEGATIVE_INFINITY;
         }
@@ -163,11 +166,17 @@ public final class SkyIslandDensity {
      * still higher than a real island two layers further down: comparing them by height alone would put the
      * surface out in open sky.
      *
-     * <p>The mask is asked of one layer when one is named. That is what keeps a stream on the island it
-     * started on. Taking the best of every layer means a channel that reaches the edge of its own island,
-     * finds a different island sixty blocks below and carries straight on over the gap between them.
+     * <p>Both the mask and the height are asked of one layer when one is named, and that is what keeps a
+     * stream on the island it started on. Reporting whichever layer stands highest reads the wrong ground
+     * entirely wherever two islands overlap: a channel running along one layer passes under an island a
+     * layer up, the surface it is handed leaps a hundred blocks, and coming back out from under it the
+     * surface falls the same hundred again. Measured, every run that ended anywhere other than an edge
+     * ended on exactly that -- a drop of fifty four to a hundred and seventy four blocks in a single block
+     * of travel, at a mask of 0.23 to 0.46, which is to say in the middle of an island and nowhere near
+     * the end of one. What is true of such a column is not that the ground fell away but that there is a
+     * second island over it, which is what {@code covered} says instead.
      *
-     * @param layer which layer to report the mask of, or -1 for the best of all of them
+     * @param layer which layer to answer for, or -1 for whichever stands highest
      */
     public static Ground ground(
         NormalNoise islands, NormalNoise ridges, double x, double z,
@@ -177,6 +186,7 @@ public final class SkyIslandDensity {
         int reach = layerReach();
         int spacing = layerCount > 1 ? (bandTop - bandBottom) / (layerCount - 1) : 0;
         double bestY = Double.NEGATIVE_INFINITY;
+        double namedY = Double.NEGATIVE_INFINITY;
         double topMask = Double.NEGATIVE_INFINITY;
         double named = Double.NEGATIVE_INFINITY;
         int topLayer = -1;
@@ -202,8 +212,14 @@ public final class SkyIslandDensity {
             if (y > bestY) {
                 bestY = y;
             }
+            if (i == layer) {
+                namedY = y;
+            }
         }
-        return new Ground(bestY, layer >= 0 ? named : topMask, topLayer);
+        if (layer < 0) {
+            return new Ground(bestY, topMask, topLayer, false);
+        }
+        return new Ground(namedY, named, topLayer, bestY > namedY);
     }
 
     private static ResourceKey<NormalNoise.NoiseParameters> noise(String path) {
@@ -354,9 +370,9 @@ public final class SkyIslandDensity {
         );
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve =
             CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(field)
-                .addPoint(-0.035F, 0.1F, 0.0F)
-                .addPoint(0.0F, -2.5F, 0.0F)
-                .addPoint(0.035F, 0.1F, 0.0F)
+                .addPoint(-0.05F, 0.1F, 0.0F)
+                .addPoint(0.0F, -1.5F, 0.0F)
+                .addPoint(0.05F, 0.1F, 0.0F)
                 .build();
         // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
         DensityFunction cut = DensityFunctions.min(
