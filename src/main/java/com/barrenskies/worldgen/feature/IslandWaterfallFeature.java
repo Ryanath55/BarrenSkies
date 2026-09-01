@@ -34,13 +34,29 @@ import net.minecraft.world.level.material.Fluids;
  * Streams Reflowing carries a fluid of its own and this does not -- so the fall is started and left alone.
  */
 public class IslandWaterfallFeature extends Feature<NoneFeatureConfiguration> {
-    /** How far the stream runs across the island top before it reaches the rim. */
-    private static final int CHANNEL_LENGTH = 10;
+    /**
+     * How far inland the stream starts, in blocks.
+     *
+     * <p>Bounded by how far a feature may write from where it was placed. Decoration only guarantees the
+     * chunk being decorated and its eight neighbours, and the placement can land anywhere in that middle
+     * chunk, so anything past sixteen blocks risks being silently dropped on the floor. Thirteen plus the
+     * wander leaves a block of margin.
+     */
+    private static final int CHANNEL_TAIL = 13;
+
+    /** How far the gully has bitten down by the time it reaches the rim. Enough to cut past soil into rock. */
+    private static final int CHANNEL_DEPTH = 4;
+
+    /** How deep it is where it starts. The difference between the two is what gives the stream its fall. */
+    private static final int MIN_CUT = 1;
+
+    /** How far the channel may wander to either side of its line. */
+    private static final int MAX_WANDER = 2;
 
     /** How far the ground must fall away past the lip for it to be a rim rather than a step. */
     private static final int MIN_DROP = 14;
 
-    /** How far a step in the channel may drop before the trace treats it as the edge. */
+    /** How far out from the placement to look for the island edge. */
     private static final int EDGE_SEARCH = 8;
 
     /** Vertical slack when looking for the surface of the next column along. */
@@ -110,8 +126,18 @@ public class IslandWaterfallFeature extends Feature<NoneFeatureConfiguration> {
             }
 
             int[] end = channel.get(channel.size() - 1);
-            carveChannel(level, channel, outward, random);
-            pourOver(level, end[0] + outward.getStepX(), end[2] - 1, end[1] + outward.getStepZ(), outward);
+            int lipWater = end[2] - CHANNEL_DEPTH;
+            carveChannel(level, channel, outward);
+
+            // Open the mouth. The gorge is cut four blocks into the rim by the time it gets here, and the
+            // cliff face outside it is not always sheer, so without this the water can be left walled in
+            // behind the last block of rock.
+            int mouthX = end[0] + outward.getStepX();
+            int mouthZ = end[1] + outward.getStepZ();
+            for (int y = end[2] + 1; y >= lipWater; y--) {
+                clear(level, mouthX, y, mouthZ);
+            }
+            pourOver(level, mouthX, lipWater, mouthZ, outward);
             return true;
         }
         return false;
@@ -250,35 +276,46 @@ public class IslandWaterfallFeature extends Feature<NoneFeatureConfiguration> {
         WorldGenLevel level, int x, int surfaceY, int z, Direction outward, int reach, RandomSource random
     ) {
         Direction side = outward.getClockWise();
-        List<int[]> path = new ArrayList<>();
-        int tail = CHANNEL_LENGTH - reach;
-        int wander = 0;
 
-        for (int step = -tail; step <= reach; step++) {
-            if (step > -tail && random.nextInt(3) == 0) {
-                wander = Math.max(-2, Math.min(2, wander + (random.nextBoolean() ? 1 : -1)));
+        // Walked outward from the origin one block at a time, in both directions, rather than jumping to
+        // each offset. Each column's surface is looked for near the height of the one before it, so a jump
+        // of thirteen blocks lands outside that window and reports open air even in the middle of an
+        // island -- which is why the first long channel found nothing anywhere.
+        List<int[]> inland = walk(level, x, surfaceY, z, outward.getOpposite(), side, CHANNEL_TAIL, random);
+        java.util.Collections.reverse(inland);
+        List<int[]> path = new ArrayList<>(inland);
+        path.add(new int[] {x, z, surfaceY});
+        path.addAll(walk(level, x, surfaceY, z, outward, side, reach, random));
+
+        if (path.size() < 6) {
+            return null;
+        }
+        // It is only a stream if it ends at a drop. One that stops short is a ditch across an island.
+        int[] last = path.get(path.size() - 1);
+        return isSheerBelow(level, last[0], last[2], last[1], outward) ? path : null;
+    }
+
+    /** Steps one block at a time along a direction, following the surface and wandering a little. */
+    private static List<int[]> walk(
+        WorldGenLevel level, int x, int surfaceY, int z, Direction along, Direction side, int steps, RandomSource random
+    ) {
+        List<int[]> out = new ArrayList<>();
+        int wander = 0;
+        int cy = surfaceY;
+        for (int step = 1; step <= steps; step++) {
+            if (random.nextInt(3) == 0) {
+                wander = Math.max(-MAX_WANDER, Math.min(MAX_WANDER, wander + (random.nextBoolean() ? 1 : -1)));
             }
-            int nx = x + outward.getStepX() * step + side.getStepX() * wander;
-            int nz = z + outward.getStepZ() * step + side.getStepZ() * wander;
-            int ny = surfaceNear(level, nx, nz, path.isEmpty() ? surfaceY : path.get(path.size() - 1)[2]);
+            int nx = x + along.getStepX() * step + side.getStepX() * wander;
+            int nz = z + along.getStepZ() * step + side.getStepZ() * wander;
+            int ny = surfaceNear(level, nx, nz, cy);
             if (ny == Integer.MIN_VALUE) {
-                // Ran off the island early. Whatever has been gathered so far is the stream, as long as it
-                // is long enough to read as one.
                 break;
             }
-            path.add(new int[] {nx, nz, ny});
+            cy = ny;
+            out.add(new int[] {nx, nz, ny});
         }
-
-        // The lip has to be the last node, or the fall would start somewhere the water never reaches.
-        if (path.size() < 3) {
-            return null;
-        }
-        int[] last = path.get(path.size() - 1);
-        if (Math.abs(last[0] - (x + outward.getStepX() * reach)) > 2
-            || Math.abs(last[1] - (z + outward.getStepZ() * reach)) > 2) {
-            return null;
-        }
-        return path;
+        return out;
     }
 
     /** Whether the air past the lip keeps going down, rather than being a ledge onto more island. */
@@ -301,44 +338,57 @@ public class IslandWaterfallFeature extends Feature<NoneFeatureConfiguration> {
      * of its own: sources never drain, so each is a small pool spilling into the one below, which is the
      * stepped look a single long flow does not give.
      */
-    private static void carveChannel(WorldGenLevel level, List<int[]> path, Direction outward, RandomSource random) {
+    private static void carveChannel(WorldGenLevel level, List<int[]> path, Direction outward) {
         Direction side = outward.getClockWise();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int nodes = path.size();
 
-        for (int i = 0; i < path.size(); i++) {
+        for (int i = 0; i < nodes; i++) {
             int[] node = path.get(i);
-            int waterY = node[2] - 1;
-            // Widened by a block on one side or the other as it goes, which keeps the banks uneven. A
-            // channel of constant width reads as a trench somebody dug.
-            int widen = random.nextInt(3) - 1;
-            int from = Math.min(0, widen);
-            int to = Math.max(0, widen);
+            boolean atLip = i == nodes - 1;
+            double along = nodes > 1 ? (double) i / (nodes - 1) : 1.0;
 
-            for (int offset = from; offset <= to; offset++) {
+            // The gully bites deeper the further down it goes. An island top is close to level, so a
+            // channel of even depth gives a stream that is level too, and a level stream is one flat sheet
+            // of water. Deepening it downstream drops the water a step at a time whatever the ground does,
+            // which is what makes each pool spill into the next, and leaves a gorge at the rim.
+            int cut = MIN_CUT + (int) Math.round((CHANNEL_DEPTH - MIN_CUT) * along);
+            int half = along < 0.3D ? 1 : 2;
+            int waterTop = node[2] - cut;
+
+            for (int offset = -half; offset <= half; offset++) {
                 int wx = node[0] + side.getStepX() * offset;
                 int wz = node[1] + side.getStepZ() * offset;
-                pos.set(wx, waterY, wz);
-                if (!level.getBlockState(pos).isSolid() && offset != 0) {
-                    continue;
+                // Floored deepest in the middle, so the cross section is a trough rather than the flat
+                // bottomed slot that a constant depth would cut.
+                int floor = waterTop - (half - Math.abs(offset));
+
+                for (int y = node[2] + 1; y > waterTop; y--) {
+                    clear(level, wx, y, wz);
                 }
-                setWater(level, pos, Blocks.WATER.defaultBlockState());
-                // Clear the bank down to the water so it is a channel and not a covered pipe.
-                clear(level, wx, waterY + 1, wz);
-                seal(level, wx, waterY, wz, side, outward, i == path.size() - 1);
+                for (int y = waterTop; y >= floor; y--) {
+                    pos.set(wx, y, wz);
+                    setWater(level, pos, Blocks.WATER.defaultBlockState());
+                    seal(level, wx, y, wz, outward, atLip);
+                }
             }
         }
     }
 
-    /** Plugs the sides and floor of the stream so it runs down the channel instead of across the island. */
-    private static void seal(WorldGenLevel level, int x, int y, int z, Direction side, Direction outward, boolean atLip) {
+    /**
+     * Plugs the sides and floor so the stream runs down the channel instead of across the island.
+     *
+     * <p>Only ever fills at or below the water. The open air above it is the channel, and filling that
+     * would roof the stream over.
+     */
+    private static void seal(WorldGenLevel level, int x, int y, int z, Direction outward, boolean atLip) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (Direction dir : Direction.Plane.HORIZONTAL) {
             if (atLip && dir == outward) {
                 continue;
             }
             pos.set(x + dir.getStepX(), y, z + dir.getStepZ());
-            BlockState state = level.getBlockState(pos);
-            if (state.isAir()) {
+            if (level.getBlockState(pos).isAir()) {
                 level.setBlock(pos, groundNear(level, pos), 2);
             }
         }
