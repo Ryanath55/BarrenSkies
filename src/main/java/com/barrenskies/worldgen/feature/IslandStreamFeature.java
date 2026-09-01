@@ -52,10 +52,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int CELL = 160;
 
     /** How far a stream runs before it gives up, if the island has not already ended under it. */
-    private static final int LENGTH = 140;
+    private static final int LENGTH = 120;
 
     /** Shorter than this is a notch in a rim, not a stream, so those plans are dropped. */
-    private static final int MIN_RUN = 14;
+    private static final int MIN_RUN = 12;
 
     /**
      * How far inside an island, by the mask, a head has to be.
@@ -89,22 +89,22 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int STEER_EVERY = 2;
 
     /** How much of the turn towards the lowest ground it actually takes each time it steers. */
-    private static final double FOLLOW = 0.15D;
+    private static final double FOLLOW = 0.30D;
 
     /** Noise added to the heading on top of the slope. Small: a waver, not a course of its own. */
-    private static final double WIGGLE = 0.045D;
+    private static final double WIGGLE = 0.015D;
 
     /** Half width in blocks at the drop, tapering to nothing at the head. */
     private static final int HALF_WIDTH = 1;
 
     /** The bed falls at least this much a block even over level ground, so water keeps moving on a deck. */
-    private static final double SLOPE = 0.04D;
+    private static final double SLOPE = 0.02D;
 
     /** Deeper than this and the plan is thrown away rather than cut as a trench. */
     private static final int MAX_CUT = 9;
 
     /** Ground falling faster than this in a block is the lip of a fall, and the channel stops there. */
-    private static final double CLIFF = 19.0D;
+    private static final double CLIFF = 5.0D;
 
     /**
      * How much of the channel before the drop is cut but left without a source of its own.
@@ -119,7 +119,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * usually falling rather than level, but a long dry lip is a channel with no water in the part of it
      * that shows most.
      */
-    private static final int DRY_LIP = 2;
+    private static final int DRY_LIP = 5;
 
     /**
      * How far past its own half width a segment of channel reaches for columns.
@@ -155,6 +155,16 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
 
     /** Below this many blocks of rock a column is the very brink and is left alone. */
     private static final int MIN_THICKNESS = 2;
+
+    /**
+     * A gap in a column this tall or shorter is something inside the island rather than the end of it.
+     *
+     * <p>Sized against the carver, not guessed: island tunnels are cut by a noise band whose mouths run to
+     * about eight blocks. Anything taller is the sky under the island. Too small and every tunnel reads as
+     * the underside again, which is the fault this exists to fix; too large and a channel can be cut across
+     * the top of a genuine void and left standing on a bed of its own making.
+     */
+    private static final int CAVE_SKIP = 8;
 
     /** Column tables cover the chunk and a block of margin, so a pillar on the boundary is still seen. */
     private static final int SPAN = 18;
@@ -613,10 +623,16 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /**
-     * Finds the top of the island rock in a column and how far down it goes.
+     * Finds the top of the island rock in a column and where the island under it ends.
      *
-     * <p>The run of rock stops at the first gap, so a cave under the surface ends it as surely as the
-     * underside does. That is deliberate: a channel cut into the roof of a cave is a hole, not a stream bed.
+     * <p>Gaps narrower than a cave mouth are stepped over rather than treated as the bottom. Stopping at
+     * the first one, which is what this used to do, does not find the underside of the island: it finds the
+     * roof of whatever cave happens to be under that column. Everything downstream reads it as the island
+     * being thin there. A column with a tunnel four blocks beneath it then refuses to be cut, and stands
+     * proud in the middle of a channel its neighbours were cut nine blocks into -- and the pass that closes
+     * pillars cannot help, because that column was claimed, just at a hopeless floor. The same wrong answer
+     * at a rim measures the rock to keep from a cave ceiling rather than from the underside, so the cut
+     * goes through what was below it after all. Both of the things still being seen, from one bad number.
      */
     private static void sound(
         WorldGenLevel level, int x, int z, int bandBottom, int bandTop, int slot, Columns columns
@@ -643,12 +659,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         }
 
         int bottom = surface;
-        while (bottom > bandBottom) {
-            pos.set(x, bottom - 1, z);
-            if (!level.getBlockState(pos).isSolid()) {
-                break;
+        int gap = 0;
+        for (int y = surface - 1; y >= bandBottom && gap <= CAVE_SKIP; y--) {
+            pos.set(x, y, z);
+            if (level.getBlockState(pos).isSolid()) {
+                bottom = y;
+                gap = 0;
+            } else {
+                gap++;
             }
-            bottom--;
         }
         columns.bottom()[slot] = bottom;
     }
@@ -661,9 +680,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * uphill, so a dry lip whose bed sat where the wet channel's water sits would meet the flow with a one
      * block step and stop it dead a stride short of going over.
      *
-     * <p>Nothing is laid under the water. It does not need it: the floor is never taken below the rock the
-     * column stands on, so the block beneath it is ground already. Conjuring one is what used to leave
-     * stubs of stone hanging off the island rims.
+     * <p>A block is laid under the floor where the floor has nothing to stand on, which happens only where
+     * the channel crosses the roof of a cave. That is safe now in a way it was not before: a column is
+     * carved once, so a bed laid under its final floor cannot land inside a channel some other pass had
+     * already opened, which is what used to leave stone standing in the water.
      */
     private static boolean carve(WorldGenLevel level, int minX, int minZ, Columns columns) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -681,6 +701,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                     if (!level.getBlockState(pos).isAir()) {
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
                     }
+                }
+                pos.set(x, floor - 1, z);
+                if (!level.getBlockState(pos).isSolid()) {
+                    level.setBlock(pos, Blocks.STONE.defaultBlockState(), 2);
                 }
                 if (columns.wet()[slot]) {
                     pos.set(x, floor, z);

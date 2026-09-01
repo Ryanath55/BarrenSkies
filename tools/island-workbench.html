@@ -676,15 +676,15 @@ var DEFAULTS = {
 
   detailOn: true, detailStrength: 0.038, detailOct: -5, detailAmp: [1, 0.6, 0.3],
 
-  t3On: true, t3Strength: 0.24, t3Oct: -5, t3Squash: 0.4, t3Amp: [1, 0.5, 0.25],
+  t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
 
-  streamsOn: true, streamCell: 160, streamChance: 100, streamLength: 140, streamMinRun: 14,
-  streamInland: 0.17, streamFollow: 0.15, streamWiggle: 0.045, streamWidth: 1,
-  streamDepth: 5, streamSlope: 0.04, streamMaxCut: 9, streamCliff: 19, streamDryLip: 2,
-  streamOct: -6, streamAmp: [1, 0.4],
-  caveBand: 0.05, caveDepth: -1.5, skinFade: 10
+  streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 12,
+  streamInland: 0.17, streamFollow: 0.3, streamWiggle: 0.015, streamWidth: 1,
+  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamCliff: 5, streamDryLip: 5,
+  streamOct: -7, streamAmp: [1, 0.4],
+  caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
 
 var S = clone(DEFAULTS);
@@ -1470,8 +1470,11 @@ function buildGrid(fast) {
         if (floorY < surf[q] - S.streamMaxCut) floorY = surf[q] - S.streamMaxCut;
         // Two blocks of rock left under it. An island is thin at its edges and the channel is deepest
         // exactly there, so without this the two meet and the cut opens a slot right through the rim,
-        // leaving the ground either side of it hanging over the gap.
-        var keep = sBot[q * MAXSPANS] + 2;
+        // leaving the ground either side of it hanging over the gap. Measured against the underside of
+        // the island -- the lowest span -- and not against the first gap under the surface, since that
+        // gap is usually a cave, and reading a cave roof as the underside makes a column refuse to be
+        // cut while its neighbours go nine blocks down, which leaves it standing in the channel.
+        var keep = sBot[q * MAXSPANS + Math.max(0, count[q] - 1)] + 2;
         if (floorY < keep) floorY = keep;
         if (floorY > surf[q] - 1) floorY = surf[q] - 1;
         if (isNaN(cutTo[q]) || floorY < cutTo[q]) cutTo[q] = floorY;

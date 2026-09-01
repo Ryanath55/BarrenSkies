@@ -60,9 +60,9 @@ public final class SkyIslandDensity {
     /**
      * How sharply cave carving is faded out towards the island surface. Carving reaches full strength once
      * the island density passes one over this, so a larger number leaves a thinner skin of solid rock.
-     * Ten works out at roughly four blocks.
+     * Eight works out at roughly five blocks.
      */
-    private static final double SKIN_FADE = 10.0D;
+    private static final double SKIN_FADE = 8.0D;
 
     /**
      * Vertical distance from a layer to where its rock has completely faded out.
@@ -370,9 +370,9 @@ public final class SkyIslandDensity {
         );
         CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve =
             CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(field)
-                .addPoint(-0.05F, 0.1F, 0.0F)
-                .addPoint(0.0F, -1.5F, 0.0F)
-                .addPoint(0.05F, 0.1F, 0.0F)
+                .addPoint(-0.035F, 0.1F, 0.0F)
+                .addPoint(0.0F, -2.5F, 0.0F)
+                .addPoint(0.035F, 0.1F, 0.0F)
                 .build();
         // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
         DensityFunction cut = DensityFunctions.min(
