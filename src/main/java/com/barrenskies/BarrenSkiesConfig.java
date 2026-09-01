@@ -16,7 +16,9 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.DoubleValue LANDFORM_STRENGTH;
     public static final ModConfigSpec.DoubleValue LANDFORM_SQUASH;
     public static final ModConfigSpec.BooleanValue ISLAND_WATERFALLS;
-    public static final ModConfigSpec.IntValue WATERFALL_RARITY;
+    public static final ModConfigSpec.IntValue WATERFALL_ISLAND_CHANCE;
+    public static final ModConfigSpec.IntValue WATERFALLS_PER_ISLAND;
+    public static final ModConfigSpec.BooleanValue WATERFALLS_ONLY_OVER_WATER;
     public static final ModConfigSpec.BooleanValue ISLAND_WATER;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
     public static final ModConfigSpec.BooleanValue LIFT_SURFACE_RULES;
@@ -150,15 +152,35 @@ public final class BarrenSkiesConfig {
             .translation("barrenskies.configuration.islandWaterfalls")
             .define("islandWaterfalls", true);
 
-        WATERFALL_RARITY = b
+        WATERFALL_ISLAND_CHANCE = b
             .comment(
-                "Of the island rims found, one in this many gets a spring.",
-                "Several spots on each chunk are looked at and nearly all are nowhere near an edge, so this",
-                "counts only the ones that could have had a waterfall, not chunks.",
-                "Lower means more. 1 puts one on every rim it finds; 3 is occasional; 20 makes one a landmark."
+                "Percentage of islands that have any water on them at all.",
+                "Decided per island rather than per chunk. Rolling for it in every chunk scattered streams",
+                "evenly, which left every island with a few and none without any, and a waterfall you can",
+                "count on finding is not worth flying to. At 30 most of the sky is dry."
             )
-            .translation("barrenskies.configuration.waterfallRarity")
-            .defineInRange("waterfallRarity", 3, 1, 200);
+            .translation("barrenskies.configuration.waterfallIslandChance")
+            .defineInRange("waterfallIslandChance", 30, 0, 100);
+
+        WATERFALLS_PER_ISLAND = b
+            .comment(
+                "How many streams an island that has water may have.",
+                "An upper limit rather than a count: each one still needs a rim that runs downhill and open",
+                "sea below it, so an island will often have fewer."
+            )
+            .translation("barrenskies.configuration.waterfallsPerIsland")
+            .defineInRange("waterfallsPerIsland", 2, 1, 8);
+
+        WATERFALLS_ONLY_OVER_WATER = b
+            .comment(
+                "Only put a stream on a rim that has open sea or a river below it.",
+                "A fall onto the barren surface is fresh water poured into a desert, and it also strands the",
+                "water on ground it then spreads across. This is what makes them worth flying out to find,",
+                "but it is also strict: an island has to overhang water, so most rims are left dry.",
+                "Turn it off if your world has too few."
+            )
+            .translation("barrenskies.configuration.waterfallsOnlyOverWater")
+            .define("waterfallsOnlyOverWater", true);
 
         ISLAND_WATER = b
             .comment(
