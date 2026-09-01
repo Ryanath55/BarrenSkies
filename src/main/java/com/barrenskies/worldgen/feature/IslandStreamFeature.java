@@ -49,7 +49,7 @@ import net.minecraft.world.level.material.Fluids;
  */
 public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** Grid the stream heads are hashed over. Roughly one candidate per island. */
-    private static final int CELL = 160;
+    private static final int CELL = 240;
 
     /** How far a stream runs before it gives up, if the island has not already ended under it. */
     private static final int LENGTH = 120;
@@ -142,6 +142,23 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static final int SCAN = 2;
 
+    /**
+     * Blocks of island rock left under the channel floor.
+     *
+     * <p>What stops a channel cutting clean through a rim. An island is thin at its edges and the channel is
+     * at its deepest exactly there, so without this the two meet and the cut opens a slot right through,
+     * leaving the ground either side of it hanging over the gap. Where even this cannot be had the column is
+     * grooved a single block rather than passed over: a column left untouched in the middle of a channel
+     * stands in it as a pillar, and a shallow bed is much the lesser of those.
+     */
+    private static final int FLOOR_KEEP = 2;
+
+    /** Below this many blocks of rock a column is the very brink and is left alone. */
+    private static final int MIN_THICKNESS = 3;
+
+    /** Column tables cover the chunk and a block of margin, so a pillar on the boundary is still seen. */
+    private static final int SPAN = 18;
+
     /** Sentinels for the per-chunk column tables: not looked at yet, and looked at and found nothing. */
     private static final int UNSCANNED = Integer.MIN_VALUE;
     private static final int NO_SURFACE = Integer.MIN_VALUE + 1;
@@ -151,19 +168,29 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /**
-     * What every stream crossing this chunk wants of each of its two hundred and fifty six columns.
+     * What every stream crossing this chunk wants of each of its columns.
+     *
+     * <p>Covers a block of ground beyond the chunk on every side. Nothing outside is ever written -- that
+     * remains the rule that keeps decoration honest -- but a pillar is recognised by having channel on
+     * both sides of it, and a pillar sitting against a chunk boundary has one of those sides in the
+     * neighbour. Reading a block across is fine; it is only writing that is not.
      *
      * @param surface the top of the island rock, or NO_SURFACE where this column has no island in it
-     * @param rock the lowest block the channel may be cut to and still leave the island floor under it
+     * @param bottom the lowest solid block of the run beneath that surface
      * @param floor the elevation the channel floor is cut to, or UNSCANNED where nothing wants this column
      * @param wet whether a source block is laid at that floor
      */
-    private record Columns(int[] surface, int[] rock, int[] floor, boolean[] wet) {
+    private record Columns(int[] surface, int[] bottom, int[] floor, boolean[] wet) {
         static Columns blank() {
-            Columns columns = new Columns(new int[256], new int[256], new int[256], new boolean[256]);
+            int size = SPAN * SPAN;
+            Columns columns = new Columns(new int[size], new int[size], new int[size], new boolean[size]);
             Arrays.fill(columns.surface, UNSCANNED);
             Arrays.fill(columns.floor, UNSCANNED);
             return columns;
+        }
+
+        static int slot(int x, int z, int minX, int minZ) {
+            return (x - minX + 1) * SPAN + (z - minZ + 1);
         }
     }
 
@@ -198,7 +225,11 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 }
             }
         }
-        return wanted && carve(level, minX, minZ, columns);
+        if (!wanted) {
+            return false;
+        }
+        close(level, minX, minZ, columns);
+        return carve(level, minX, minZ, columns);
     }
 
     /** One block of the centre line: where it is, which way it points, and what elevation its floor is at. */
@@ -454,10 +485,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             Node node = nodes.get(step);
             double radius = node.half() + BRIDGE;
 
-            int x0 = Math.max(minX, (int) Math.floor(Math.min(from.x(), node.x()) - radius));
-            int x1 = Math.min(minX + 15, (int) Math.floor(Math.max(from.x(), node.x()) + radius));
-            int z0 = Math.max(minZ, (int) Math.floor(Math.min(from.z(), node.z()) - radius));
-            int z1 = Math.min(minZ + 15, (int) Math.floor(Math.max(from.z(), node.z()) + radius));
+            int x0 = Math.max(minX - 1, (int) Math.floor(Math.min(from.x(), node.x()) - radius));
+            int x1 = Math.min(minX + 16, (int) Math.floor(Math.max(from.x(), node.x()) + radius));
+            int z0 = Math.max(minZ - 1, (int) Math.floor(Math.min(from.z(), node.z()) - radius));
+            int z1 = Math.min(minZ + 16, (int) Math.floor(Math.max(from.z(), node.z()) + radius));
 
             for (int x = x0; x <= x1; x++) {
                 for (int z = z0; z <= z1; z++) {
@@ -465,28 +496,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                     if (away > radius) {
                         continue;
                     }
-                    int slot = (x - minX) * 16 + (z - minZ);
+                    int slot = Columns.slot(x, z, minX, minZ);
                     if (columns.surface()[slot] == UNSCANNED) {
                         sound(level, x, z, bandBottom, bandTop, slot, columns);
                     }
-                    int surface = columns.surface()[slot];
-                    if (surface == NO_SURFACE) {
-                        continue;
-                    }
                     // V shaped: the floor rises a block for every block out from the middle, and no
                     // further than the half width however far the bridging reach had to stretch.
-                    int floor = (int) Math.floor(node.bed()) + Math.min(node.half(), (int) Math.round(away));
-                    floor = Math.min(floor, surface - 1);
-                    floor = Math.max(floor, surface - MAX_CUT);
-                    // Never through the island's own rock. Cutting past the bottom leaves the water with
-                    // nothing to sit on, and the block that used to be conjured underneath it is what left
-                    // stubs of stone hanging off the rims.
-                    floor = Math.max(floor, columns.rock()[slot]);
-                    if (floor > surface - 1) {
+                    int wants = (int) Math.floor(node.bed()) + Math.min(node.half(), (int) Math.round(away));
+                    if (!claim(columns, slot, wants)) {
                         continue;
-                    }
-                    if (columns.floor()[slot] == UNSCANNED || floor < columns.floor()[slot]) {
-                        columns.floor()[slot] = floor;
                     }
                     // The later node wins, and the later node is the one nearer the drop, so a column the
                     // lip reaches over stays dry even where a wet node also touched it.
@@ -496,6 +514,79 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             }
         }
         return wanted;
+    }
+
+    /**
+     * Records that something wants this column opened to a given elevation, if it can be.
+     *
+     * <p>Where several nodes want the same column -- and consecutive ones overlap across most of their
+     * width -- the lowest wins, so a column has one floor rather than being cut once for each of them.
+     *
+     * @return whether the column is claimed at all
+     */
+    private static boolean claim(Columns columns, int slot, int wants) {
+        int surface = columns.surface()[slot];
+        if (surface == NO_SURFACE || surface - columns.bottom()[slot] < MIN_THICKNESS - 1) {
+            return false;
+        }
+        int floor = Math.min(wants, surface - 1);
+        floor = Math.max(floor, surface - MAX_CUT);
+        // Leave rock under it, so the channel cannot open a slot through a rim; but groove the column
+        // rather than passing over it where the island is too thin to allow even that, because a column
+        // the channel leaves untouched stands in the middle of it as a pillar.
+        floor = Math.max(floor, columns.bottom()[slot] + FLOOR_KEEP);
+        floor = Math.min(floor, surface - 1);
+        if (columns.floor()[slot] == UNSCANNED || floor < columns.floor()[slot]) {
+            columns.floor()[slot] = floor;
+        }
+        return true;
+    }
+
+    /**
+     * Opens any column the channel has surrounded but not claimed.
+     *
+     * <p>Two ways one arises. A tight enough bend has the channel pass either side of a column without the
+     * path itself ever crossing it, and a column whose rock ran out shallow takes a floor of its own that
+     * can stand well above its neighbours'. Both leave a block of ground with channel on both sides of it,
+     * which is the definition of the pillars, so both are answered the same way: give it the lower of the
+     * two floors bracketing it.
+     *
+     * <p>Only columns bracketed on an axis are touched. A channel wall is bounded on one side and stays.
+     */
+    private static void close(WorldGenLevel level, int minX, int minZ, Columns columns) {
+        int reach = SkyIslandDensity.layerReach();
+        int bandBottom = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - reach;
+        int bandTop = BarrenSkiesConfig.SKY_ISLAND_TOP.get() + reach * 2;
+
+        for (int x = minX; x < minX + 16; x++) {
+            for (int z = minZ; z < minZ + 16; z++) {
+                int slot = Columns.slot(x, z, minX, minZ);
+                if (columns.floor()[slot] != UNSCANNED) {
+                    continue;
+                }
+                int west = columns.floor()[slot - SPAN];
+                int east = columns.floor()[slot + SPAN];
+                int north = columns.floor()[slot - 1];
+                int south = columns.floor()[slot + 1];
+                int bracket;
+                boolean wet;
+                if (west != UNSCANNED && east != UNSCANNED) {
+                    bracket = Math.min(west, east);
+                    wet = columns.wet()[slot - SPAN] && columns.wet()[slot + SPAN];
+                } else if (north != UNSCANNED && south != UNSCANNED) {
+                    bracket = Math.min(north, south);
+                    wet = columns.wet()[slot - 1] && columns.wet()[slot + 1];
+                } else {
+                    continue;
+                }
+                if (columns.surface()[slot] == UNSCANNED) {
+                    sound(level, x, z, bandBottom, bandTop, slot, columns);
+                }
+                if (claim(columns, slot, bracket)) {
+                    columns.wet()[slot] = wet;
+                }
+            }
+        }
     }
 
     private static double distanceToSegment(double px, double pz, Node from, Node to) {
@@ -545,41 +636,45 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             }
             bottom--;
         }
-        // One above the last solid block, so the floor of the channel always has ground beneath it.
-        columns.rock()[slot] = bottom + 1;
+        columns.bottom()[slot] = bottom;
     }
 
     /**
-     * Opens every column the streams claimed, once each.
+     * Opens every column the streams claimed, once each, and only inside this chunk.
      *
      * <p>The floor is cut away like everything above it and the water, where there is water, is laid in the
      * space that leaves. Wet and dry columns are cut to the same elevation on purpose: water will not flow
      * uphill, so a dry lip whose bed sat where the wet channel's water sits would meet the flow with a one
      * block step and stop it dead a stride short of going over.
+     *
+     * <p>Nothing is laid under the water. It does not need it: the floor is never taken below the rock the
+     * column stands on, so the block beneath it is ground already. Conjuring one is what used to leave
+     * stubs of stone hanging off the island rims.
      */
     private static boolean carve(WorldGenLevel level, int minX, int minZ, Columns columns) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         boolean carved = false;
 
-        for (int slot = 0; slot < 256; slot++) {
-            int floor = columns.floor()[slot];
-            if (floor == UNSCANNED) {
-                continue;
-            }
-            int x = minX + (slot >> 4);
-            int z = minZ + (slot & 15);
-            for (int y = columns.surface()[slot]; y >= floor; y--) {
-                pos.set(x, y, z);
-                if (!level.getBlockState(pos).isAir()) {
-                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+        for (int x = minX; x < minX + 16; x++) {
+            for (int z = minZ; z < minZ + 16; z++) {
+                int slot = Columns.slot(x, z, minX, minZ);
+                int floor = columns.floor()[slot];
+                if (floor == UNSCANNED) {
+                    continue;
                 }
+                for (int y = columns.surface()[slot]; y >= floor; y--) {
+                    pos.set(x, y, z);
+                    if (!level.getBlockState(pos).isAir()) {
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+                    }
+                }
+                if (columns.wet()[slot]) {
+                    pos.set(x, floor, z);
+                    level.setBlock(pos, Blocks.WATER.defaultBlockState(), 2);
+                    level.scheduleTick(pos, Fluids.WATER, 0);
+                }
+                carved = true;
             }
-            if (columns.wet()[slot]) {
-                pos.set(x, floor, z);
-                level.setBlock(pos, Blocks.WATER.defaultBlockState(), 2);
-                level.scheduleTick(pos, Fluids.WATER, 0);
-            }
-            carved = true;
         }
         return carved;
     }

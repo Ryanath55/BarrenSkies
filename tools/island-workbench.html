@@ -680,7 +680,7 @@ var DEFAULTS = {
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
 
-  streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 12,
+  streamsOn: true, streamCell: 240, streamChance: 90, streamLength: 120, streamMinRun: 12,
   streamInland: 0.17, streamFollow: 0.3, streamWiggle: 0.015, streamWidth: 1,
   streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamCliff: 5, streamDryLip: 5,
   streamOct: -7, streamAmp: [1, 0.4],
@@ -1459,6 +1459,12 @@ function buildGrid(fast) {
         // plan, and never more than the deepest cut, so it cannot open a shaft.
         var floorY = Math.min(node.floor, surf[q] - 1);
         if (floorY < surf[q] - S.streamMaxCut) floorY = surf[q] - S.streamMaxCut;
+        // Two blocks of rock left under it. An island is thin at its edges and the channel is deepest
+        // exactly there, so without this the two meet and the cut opens a slot right through the rim,
+        // leaving the ground either side of it hanging over the gap.
+        var keep = sBot[q * MAXSPANS] + 2;
+        if (floorY < keep) floorY = keep;
+        if (floorY > surf[q] - 1) floorY = surf[q] - 1;
         if (isNaN(cutTo[q]) || floorY < cutTo[q]) cutTo[q] = floorY;
         wet[q] = node.wet ? 1 : 0;
       }

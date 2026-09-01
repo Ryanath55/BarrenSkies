@@ -160,7 +160,7 @@ public final class BarrenSkiesConfig {
                 "count on finding is not worth flying to. At 30 most of the sky is dry."
             )
             .translation("barrenskies.configuration.waterfallIslandChance")
-            .defineInRange("waterfallIslandChance", 70, 0, 100);
+            .defineInRange("waterfallIslandChance", 90, 0, 100);
 
         STREAM_DEPTH = b
             .comment(
