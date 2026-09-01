@@ -83,16 +83,30 @@ public final class SkyIslandDensity {
      * sky biome for every column above the island floor, including open air between islands.
      */
     public static boolean hasIsland(NormalNoise noise, int x, int z, int layerCount, double threshold, double horizontalScale) {
+        // A margin wider than the terrain mask, because the density is interpolated across cells and rock
+        // bleeds slightly past where the mask alone says land. Without it those edge columns fall through
+        // and report the barren biome from the ground below.
+        return islandStrength(noise, x, z, layerCount, threshold, horizontalScale) + BIOME_MASK_MARGIN > 0.0D;
+    }
+
+    /**
+     * How far inside an island a column is, as the mask sees it. Negative outside one.
+     *
+     * <p>The same number {@link #hasIsland} works from, without the margin that method adds for the biome
+     * pass. Anything that needs to know whether there is actually rock here, rather than whether a biome
+     * should be named as though there were, wants this one: the margin is deliberately generous, and asking
+     * it for ground gives an answer that is wrong at exactly the edges where it matters.
+     */
+    public static double islandStrength(NormalNoise noise, int x, int z, int layerCount, double threshold, double horizontalScale) {
+        double best = Double.NEGATIVE_INFINITY;
         for (int i = 0; i < layerCount; i++) {
             double shift = i * 4096.0D;
-            // A margin wider than the terrain mask, because the density is interpolated across cells and
-            // rock bleeds slightly past where the mask alone says land. Without it those edge columns
-            // fall through and report the barren biome from the ground below.
-            if (noise.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold + BIOME_MASK_MARGIN > 0.0D) {
-                return true;
+            double mask = noise.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold;
+            if (mask > best) {
+                best = mask;
             }
         }
-        return false;
+        return best;
     }
 
     private static ResourceKey<NormalNoise.NoiseParameters> noise(String path) {
