@@ -64,7 +64,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * also the length control: a head further in has further to run before it finds an edge, at the cost of
      * fewer cells having anywhere that qualifies at all.
      */
-    private static final double INLAND = 0.35D;
+    private static final double INLAND = 0.17D;
 
     /** Air needed above a surface before it counts as open ground rather than the roof of a cave. */
     private static final int OPEN_SKY = 6;
@@ -89,7 +89,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int STEER_EVERY = 2;
 
     /** How much of the turn towards the lowest ground it actually takes each time it steers. */
-    private static final double FOLLOW = 0.25D;
+    private static final double FOLLOW = 0.15D;
 
     /** Noise added to the heading on top of the slope. Small: a waver, not a course of its own. */
     private static final double WIGGLE = 0.045D;
@@ -101,7 +101,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final double SLOPE = 0.04D;
 
     /** Deeper than this and the plan is thrown away rather than cut as a trench. */
-    private static final int MAX_CUT = 6;
+    private static final int MAX_CUT = 9;
 
     /** Ground falling faster than this in a block is the lip of a fall, and the channel stops there. */
     private static final double CLIFF = 19.0D;
@@ -448,7 +448,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             Node node = nodes.get(step);
             double along = step / (double) run;
             double want = 2.0D + (maxDepth - 2.0D) * along;
+            double previous = bed;
             bed = Math.min(bed - SLOPE, node.bed() - want);
+            // The least fall is not allowed to dig its own trench. Over a level deck it accumulates -- a
+            // hundred and forty blocks at four hundredths is five and a half of them -- and would take the
+            // cut past the cap on its own, throwing away a plan that had nothing wrong with it. Held at the
+            // cap instead, which is still never rising, and never lifted above where the bed already was.
+            bed = Math.max(bed, Math.min(previous, node.bed() - MAX_CUT));
+            // Past the cap even so, which now only happens where the ground itself climbed into the
+            // channel. That is a gorge rather than a stream, and it is thrown away rather than dug.
             if (node.bed() - bed > MAX_CUT) {
                 return false;
             }

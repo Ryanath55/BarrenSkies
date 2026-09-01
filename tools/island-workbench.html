@@ -681,9 +681,9 @@ var DEFAULTS = {
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
 
   streamsOn: true, streamCell: 160, streamChance: 100, streamLength: 140, streamMinRun: 14,
-  streamInland: 0.35, streamFollow: 0.25, streamWiggle: 0.045, streamWidth: 1,
-  streamDepth: 3, streamSlope: 0.04, streamMaxCut: 6, streamCliff: 19, streamDryLip: 2,
-  streamOct: -4, streamAmp: [1, 0.4],
+  streamInland: 0.17, streamFollow: 0.15, streamWiggle: 0.045, streamWidth: 1,
+  streamDepth: 5, streamSlope: 0.04, streamMaxCut: 9, streamCliff: 19, streamDryLip: 2,
+  streamOct: -6, streamAmp: [1, 0.4],
   caveBand: 0.05, caveDepth: -1.5, skinFade: 10
 };
 
@@ -941,7 +941,14 @@ function profileChannel(nodes) {
     // Shallow and narrow at the head, deep and wide at the drop. Both are measured along the run, which
     // is why this is a path and not a noise contour: a contour has no along, so it cannot taper.
     var want = 2 + (S.streamDepth - 2) * along;
+    var previous = bed;
     bed = Math.min(bed - S.streamSlope, n.h - want);
+    // The least fall is not allowed to dig its own trench. Over a level deck it accumulates -- a hundred
+    // and forty blocks at four hundredths is five and a half of them -- and would take the cut past the
+    // cap on its own, throwing away a plan with nothing wrong with it. Held at the cap instead, which is
+    // still never rising, and never lifted above where the bed already was.
+    bed = Math.max(bed, Math.min(previous, n.h - S.streamMaxCut));
+    // Past the cap even so, which now only happens where the ground itself climbed into the channel.
     if (n.h - bed > S.streamMaxCut) return null;
     n.along = along;
     n.bed = bed;

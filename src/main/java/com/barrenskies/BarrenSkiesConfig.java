@@ -170,7 +170,7 @@ public final class BarrenSkiesConfig {
                 "banks read as a gorge rather than a ditch."
             )
             .translation("barrenskies.configuration.streamDepth")
-            .defineInRange("streamDepth", 3, 2, 12);
+            .defineInRange("streamDepth", 5, 2, 12);
 
         WATERFALLS_ONLY_OVER_WATER = b
             .comment(
