@@ -222,6 +222,142 @@ public final class SkyIslandDensity {
         return new Ground(namedY, named, topLayer, bestY > namedY);
     }
 
+    /** The mask value alone, as a spline coordinate, for the underside and the cave carve. */
+    private static final Axis ONLY_MASK = new Axis(false);
+
+    private static final CubicSpline<Shape, Axis> BOWL_SHAPE =
+        SkyIslandDensity.<Shape, Axis>underside(ONLY_MASK);
+
+    private static final CubicSpline<Shape, Axis> CARVE_SHAPE =
+        SkyIslandDensity.<Shape, Axis>carve(ONLY_MASK);
+
+    /**
+     * Every noise the island field is built from, bound to one world.
+     *
+     * <p>Enough to work out what the generator will actually put at a point, rather than only what the
+     * height field says about a column. Those are different surfaces: the height field is smooth, and the
+     * detail and landform noise move the ground several blocks either way on top of it. Planning against
+     * the smooth one and cutting against the real one is what leaves a channel needing to be clamped where
+     * the two disagree, and every one of those clamps is a step back up, a source in the wrong place, or a
+     * channel that stops early.
+     */
+    public record Field(
+        NormalNoise islands, NormalNoise ridges, NormalNoise detail, NormalNoise landform, NormalNoise caves,
+        int bandBottom, int bandTop, int layerCount, double threshold, double horizontalScale,
+        double landformStrength, double landformSquash, boolean landformOn, boolean cavesOn
+    ) {
+        public int reach() {
+            return layerReach();
+        }
+
+        public int spacing() {
+            return this.layerCount > 1 ? (this.bandTop - this.bandBottom) / (this.layerCount - 1) : 0;
+        }
+
+        public double centre(int layer) {
+            return this.bandBottom + (double) spacing() * layer;
+        }
+
+        public double mask(double x, double z, int layer) {
+            double shift = layer * 4096.0D;
+            return this.islands.getValue(
+                x * this.horizontalScale + shift, 0.0D, z * this.horizontalScale + shift
+            ) - this.threshold;
+        }
+    }
+
+    private static double clamp(double value, double low, double high) {
+        return value < low ? low : Math.min(value, high);
+    }
+
+    /**
+     * One layer's rock at a point: solid where the fade from above and the fade from below agree.
+     *
+     * <p>The same two gradients the density builds, written out. Each runs to twice the reach and to minus
+     * two rather than stopping at minus one, which is why the clamps go to two.
+     */
+    private static double layerAt(Field field, double mask, double ridge, int layer, double y) {
+        double dy = (y - field.centre(layer)) / field.reach();
+        double up = DECK_SHAPE.apply(new Shape(mask, ridge)) - clamp(dy, 0.0D, 2.0D);
+        double down = BOWL_SHAPE.apply(new Shape(mask, ridge)) + clamp(dy, -2.0D, 0.0D);
+        return Math.min(up, down);
+    }
+
+    /**
+     * The island field at a point, exactly as {@link #build} composes it.
+     *
+     * <p>Everything except the interpolation across noise cells, which moves a surface by about a block and
+     * is why anything reading this should leave itself that much room.
+     */
+    public static double density(Field field, double x, double y, double z) {
+        double ridge = field.ridges().getValue(x, 0.0D, z);
+        double best = Double.NEGATIVE_INFINITY;
+        for (int i = 0; i < field.layerCount(); i++) {
+            double value = layerAt(field, field.mask(x, z, i), ridge, i, y);
+            if (value > best) {
+                best = value;
+            }
+        }
+        best += field.detail().getValue(x, y, z) * DETAIL_STRENGTH;
+        if (field.landformOn()) {
+            best += field.landform().getValue(x, y * field.landformSquash(), z) * field.landformStrength();
+        }
+        if (field.cavesOn()) {
+            best += caveCut(field, best, x, y, z);
+        }
+        return best;
+    }
+
+    /** How much the cave carver takes out of the rock at a point. Never positive. */
+    public static double caveCut(Field field, double rock, double x, double y, double z) {
+        double cut = CARVE_SHAPE.apply(new Shape(field.caves().getValue(x, y, z), 0.0D));
+        if (cut > 0.0D) {
+            cut = 0.0D;
+        }
+        return cut * clamp(rock * SKIN_FADE, 0.0D, 1.0D);
+    }
+
+    /**
+     * The top of the rock a layer actually generates in a column, caves and all.
+     *
+     * <p>Searched rather than solved, because once the three dimensional terms are in the surface stops
+     * being a function of x and z at all. The search is bounded: a term of amplitude A can only move the
+     * surface by A reaches, so it looks that far either side of where the height field said the surface
+     * would be. Returns MIN_VALUE where the column has nothing solid in that window.
+     */
+    public static int surfaceOf(Field field, double x, double z, int layer, int slack) {
+        double ridge = field.ridges().getValue(x, 0.0D, z);
+        double mask = field.mask(x, z, layer);
+        double offset = DECK_SHAPE.apply(new Shape(mask, ridge));
+        if (mask <= 0.0D || offset <= 0.0D) {
+            return Integer.MIN_VALUE;
+        }
+        int from = (int) Math.ceil(field.centre(layer) + offset * field.reach()) + slack;
+        int to = (int) Math.floor(field.centre(layer) - Math.max(0.0D, BOWL_SHAPE.apply(new Shape(mask, 0.0D)))
+            * field.reach()) - slack;
+        for (int y = from; y >= to; y--) {
+            if (density(field, x, y, z) > 0.0D) {
+                return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /** How far below a point the rock keeps going, stopping at the first gap taller than a cave mouth. */
+    public static int floorUnder(Field field, double x, double z, int from, int lowest, int caveSkip) {
+        int bottom = from;
+        int gap = 0;
+        for (int y = from - 1; y >= lowest && gap <= caveSkip; y--) {
+            if (density(field, x, y, z) > 0.0D) {
+                bottom = y;
+                gap = 0;
+            } else {
+                gap++;
+            }
+        }
+        return bottom;
+    }
+
     private static ResourceKey<NormalNoise.NoiseParameters> noise(String path) {
         return ResourceKey.create(Registries.NOISE, ResourceLocation.fromNamespaceAndPath("barrenskies", path));
     }
@@ -368,12 +504,7 @@ public final class SkyIslandDensity {
         DensityFunctions.Spline.Coordinate field = new DensityFunctions.Spline.Coordinate(
             Holder.direct(DensityFunctions.noise(caveNoise, 1.0D, 1.0D))
         );
-        CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve =
-            CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(field)
-                .addPoint(-0.035F, 0.1F, 0.0F)
-                .addPoint(0.0F, -2.5F, 0.0F)
-                .addPoint(0.035F, 0.1F, 0.0F)
-                .build();
+        CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> carve = carve(field);
         // Clamped at zero so the positive shoulders of the spline cannot add rock where there was none.
         DensityFunction cut = DensityFunctions.min(
             DensityFunctions.interpolated(DensityFunctions.spline(carve)), DensityFunctions.zero()
@@ -436,10 +567,16 @@ public final class SkyIslandDensity {
      * instead gives a dome under a dome, which is what made islands read as spheres. Values follow Skylands
      * over the Sea, which is where the shape comes from.
      */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> underside(
-        DensityFunctions.Spline.Coordinate inland
-    ) {
-        return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
+    private static <C, I extends ToFloatFunction<C>> CubicSpline<C, I> carve(I field) {
+        return CubicSpline.<C, I>builder(field)
+            .addPoint(-0.035F, 0.1F, 0.0F)
+            .addPoint(0.0F, -2.5F, 0.0F)
+            .addPoint(0.035F, 0.1F, 0.0F)
+            .build();
+    }
+
+    private static <C, I extends ToFloatFunction<C>> CubicSpline<C, I> underside(I inland) {
+        return CubicSpline.<C, I>builder(inland)
             .addPoint(-1.0F, -1.4F, 0.0F)
             .addPoint(-0.08F, -0.25F, 1.6F)
             .addPoint(0.0F, 0.0F, 0.0F)

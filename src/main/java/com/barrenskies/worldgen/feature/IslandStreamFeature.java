@@ -69,8 +69,17 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** Air needed above a surface before it counts as open ground rather than the roof of a cave. */
     private static final int OPEN_SKY = 6;
 
-    /** Candidate heads scattered through a cell. The highest of them is the one that gets the stream. */
-    private static final int HEAD_TRIES = 12;
+    /**
+     * Candidate heads scattered through a cell.
+     *
+     * <p>Generous, because a head has to be well inside an island and a cell is mostly not island at all:
+     * at twelve, seven cells in eight held no candidate anywhere and were given up on before a channel was
+     * ever walked. Each of these costs one lookup of the height field, which is nothing next to walking.
+     */
+    private static final int HEAD_TRIES = 40;
+
+    /** How many of those, tallest first, get a channel walked from them before the cell is given up on. */
+    private static final int HEAD_RETRIES = 5;
 
     /** Then uphill from there, this far a step, for at most this many rounds. */
     private static final double CLIMB_STEP = 5.0D;
@@ -166,6 +175,22 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static final int CAVE_SKIP = 8;
 
+    /**
+     * How far either side of the height field the real surface is looked for.
+     *
+     * <p>The three dimensional terms can move it by their amplitude times the layer reach, and normal noise
+     * runs past one, so this is about twice the nominal for the two of them together.
+     */
+    private static final int SLACK = 16;
+
+    /**
+     * How close two streams may come before the later of them is dropped.
+     *
+     * <p>Which is later is decided by the cell hash and not by who was planned first, so every chunk that
+     * looks at the pair agrees without having to know what any other chunk did.
+     */
+    private static final int SEPARATION = 10;
+
     /** Column tables cover the chunk and a block of margin, so a pillar on the boundary is still seen. */
     private static final int SPAN = 18;
 
@@ -247,7 +272,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /** A stream known to start on high ground and to reach an edge, worked out before anything is cut. */
-    private record Plan(int startX, int startZ, List<Node> nodes) {
+    private record Plan(int startX, int startZ, int layer, List<Node> nodes) {
     }
 
     private record CellKey(long seed, int x, int z) {
@@ -269,41 +294,143 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             }
         });
 
+    /**
+     * A second cache, for plans before the separation rule has looked at them.
+     *
+     * <p>Deciding whether two streams are too close means planning both, and planning a neighbour must not
+     * ask about its neighbours in turn or nothing would ever finish. So there are two rounds: a plan on its
+     * own merits, cached here, and then the same plan with its neighbours weighed against it, cached above.
+     */
+    private static final ThreadLocal<Map<CellKey, Optional<Plan>>> DRAFTS =
+        ThreadLocal.withInitial(() -> new LinkedHashMap<>(256, 0.75F, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<CellKey, Optional<Plan>> eldest) {
+                return size() > 256;
+            }
+        });
+
     private static Plan cached(FeaturePlaceContext<NoneFeatureConfiguration> context, int cellX, int cellZ) {
         CellKey key = new CellKey(context.level().getSeed(), cellX, cellZ);
         return PLANS.get()
+            .computeIfAbsent(key, k -> Optional.ofNullable(settled(context, k)))
+            .orElse(null);
+    }
+    private static Plan draft(FeaturePlaceContext<NoneFeatureConfiguration> context, CellKey key) {
+        return DRAFTS.get()
             .computeIfAbsent(key, k -> Optional.ofNullable(plan(context, k)))
             .orElse(null);
     }
 
-    /** The height field, bound to one world, so the planner can ask it about any coordinate. */
-    private record Terrain(
-        NormalNoise islands, NormalNoise ridges, NormalNoise streams,
-        int bandBottom, int bandTop, int layers, double threshold, double scale
-    ) {
+    /**
+     * A plan, unless a neighbouring one has the better claim to the ground it crosses.
+     *
+     * <p>Which of a pair gives way is settled by their cell hashes and not by which was worked out first,
+     * so every chunk that sees the two of them agrees without needing to know what any other chunk decided.
+     * Two channels crossing would each cut the other's bed away and leave both draining sideways.
+     */
+    private static Plan settled(FeaturePlaceContext<NoneFeatureConfiguration> context, CellKey key) {
+        Plan mine = draft(context, key);
+        if (mine == null) {
+            return null;
+        }
+        long rank = mix(key.seed() ^ (key.x() * 7919L) ^ (key.z() * 104729L));
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                CellKey other = new CellKey(key.seed(), key.x() + dx, key.z() + dz);
+                long theirs = mix(other.seed() ^ (other.x() * 7919L) ^ (other.z() * 104729L));
+                if (theirs >= rank) {
+                    continue;
+                }
+                Plan near = draft(context, other);
+                if (near != null && crosses(mine, near)) {
+                    return null;
+                }
+            }
+        }
+        return mine;
+    }
+
+    /** Whether two channels ever come within a channel's width and then some of each other. */
+    private static boolean crosses(Plan mine, Plan other) {
+        for (Node node : mine.nodes()) {
+            for (Node theirs : other.nodes()) {
+                double dx = node.x() - theirs.x();
+                double dz = node.z() - theirs.z();
+                if (dx * dx + dz * dz < SEPARATION * SEPARATION) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The island, bound to one world, so the planner can ask it about any coordinate.
+     *
+     * <p>Two surfaces here and the difference between them matters. {@link #heightAt} is the height field
+     * alone: smooth, cheap, and the right thing to steer by, since which way an island falls over eight
+     * blocks is a question about its shape and not about the texture on it. {@link #trueSurface} is where
+     * the generator will actually put the top block, three dimensional terms and caves included, and it is
+     * the only thing a channel may be measured against. Planning on the first and cutting against the
+     * second is what left every disagreement between them to be papered over by a clamp at carve time, and
+     * each of those clamps is a step back up, a source in the wrong place, or a channel that stops early.
+     */
+    private record Terrain(SkyIslandDensity.Field field, NormalNoise streams) {
         SkyIslandDensity.Ground at(double x, double z, int layer) {
             return SkyIslandDensity.ground(
-                this.islands, this.ridges, x, z,
-                this.bandBottom, this.bandTop, this.layers, this.threshold, this.scale, layer
+                this.field.islands(), this.field.ridges(), x, z,
+                this.field.bandBottom(), this.field.bandTop(), this.field.layerCount(),
+                this.field.threshold(), this.field.horizontalScale(), layer
             );
         }
 
         double heightAt(double x, double z, int layer) {
             return at(x, z, layer).surfaceY();
         }
+
+        /** Where the rock actually stops in a column, or MIN_VALUE if this layer has none here. */
+        int trueSurface(double x, double z, int layer) {
+            SkyIslandDensity.Ground ground = at(x, z, layer);
+            if (!ground.hasGround()) {
+                return Integer.MIN_VALUE;
+            }
+            int middle = (int) Math.round(ground.surfaceY());
+            for (int y = middle + SLACK; y >= middle - SLACK; y--) {
+                if (solid(x, y, z)) {
+                    return y;
+                }
+            }
+            return Integer.MIN_VALUE;
+        }
+
+        boolean solid(double x, double y, double z) {
+            return SkyIslandDensity.density(this.field, x, y, z) > 0.0D;
+        }
     }
 
     private static Terrain terrainOf(FeaturePlaceContext<NoneFeatureConfiguration> context) {
         var random = context.level().getLevel().getChunkSource().randomState();
         return new Terrain(
-            random.getOrCreateNoise(SkyIslandDensity.ISLANDS),
-            random.getOrCreateNoise(SkyIslandDensity.ISLAND_RIDGES),
-            random.getOrCreateNoise(SkyIslandDensity.ISLAND_STREAMS),
-            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
-            BarrenSkiesConfig.SKY_ISLAND_TOP.get(),
-            BarrenSkiesConfig.ISLAND_LAYERS.get(),
-            BarrenSkiesConfig.ISLAND_THRESHOLD.get(),
-            BarrenSkiesConfig.ISLAND_SCALE.get()
+            new SkyIslandDensity.Field(
+                random.getOrCreateNoise(SkyIslandDensity.ISLANDS),
+                random.getOrCreateNoise(SkyIslandDensity.ISLAND_RIDGES),
+                random.getOrCreateNoise(SkyIslandDensity.ISLAND_DETAIL),
+                random.getOrCreateNoise(SkyIslandDensity.ISLAND_LANDFORM),
+                random.getOrCreateNoise(SkyIslandDensity.ISLAND_CAVES),
+                BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
+                BarrenSkiesConfig.SKY_ISLAND_TOP.get(),
+                BarrenSkiesConfig.ISLAND_LAYERS.get(),
+                BarrenSkiesConfig.ISLAND_THRESHOLD.get(),
+                BarrenSkiesConfig.ISLAND_SCALE.get(),
+                BarrenSkiesConfig.LANDFORM_STRENGTH.get(),
+                BarrenSkiesConfig.LANDFORM_SQUASH.get(),
+                BarrenSkiesConfig.LANDFORM_NOISE.get(),
+                BarrenSkiesConfig.ISLAND_CAVES.get()
+            ),
+            random.getOrCreateNoise(SkyIslandDensity.ISLAND_STREAMS)
         );
     }
 
@@ -316,63 +443,73 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
 
         Terrain terrain = terrainOf(context);
 
-        // The highest of a scatter of candidates, not the first one that happens to be inland. A stream has
-        // to start at the top or it has nowhere to go, and the decks differ by forty blocks between ridge
-        // bands, so which candidate is taken decides most of what the stream then does.
-        int startX = 0;
-        int startZ = 0;
-        int layer = -1;
-        double bestY = Double.NEGATIVE_INFINITY;
+        // Candidates by height, tallest first, and each of them tried in turn. A stream has to start at
+        // the top or it has nowhere to go, and the decks differ by forty blocks between ridge bands, so
+        // the tallest is the right one to want. But the rules a finished channel has to satisfy are strict
+        // and a head can fail all of them for reasons that say nothing about the cell -- a hollow under
+        // the ground it would have crossed, an edge just out of reach. Trying only the tallest threw the
+        // whole cell away on one unlucky start, and left one stream standing in seven thousand blocks.
+        List<int[]> heads = new ArrayList<>(HEAD_TRIES);
         for (int attempt = 0; attempt < HEAD_TRIES; attempt++) {
             long pick = mix(hash + attempt * 0x9E3779B97F4A7C15L);
             int x = key.x() * CELL + (int) Math.floorMod(pick, CELL);
             int z = key.z() * CELL + (int) Math.floorMod(pick >> 20, CELL);
             SkyIslandDensity.Ground ground = terrain.at(x, z, -1);
-            if (ground.mask() < INLAND || !ground.hasGround() || ground.surfaceY() <= bestY) {
+            if (ground.mask() < INLAND || !ground.hasGround()) {
                 continue;
             }
-            bestY = ground.surfaceY();
-            startX = x;
-            startZ = z;
-            layer = ground.layer();
+            heads.add(new int[] { x, z, ground.layer(), (int) Math.round(ground.surfaceY()) });
         }
-        if (layer < 0) {
-            return null;
-        }
+        heads.sort((a, b) -> Integer.compare(b[3], a[3]));
 
-        // Then uphill for as long as it keeps climbing, which moves the head onto the crest above the
-        // candidate instead of leaving it partway down whatever slope the candidate happened to land on.
-        for (int round = 0; round < CLIMB_ROUNDS; round++) {
-            boolean stepped = false;
-            for (int spoke = 0; spoke < 8; spoke++) {
-                double angle = spoke / 8.0D * Math.PI * 2.0D;
-                int x = (int) Math.round(startX + Math.sin(angle) * CLIMB_STEP);
-                int z = (int) Math.round(startZ + Math.cos(angle) * CLIMB_STEP);
-                SkyIslandDensity.Ground ground = terrain.at(x, z, layer);
-                if (ground.mask() < INLAND || ground.surfaceY() <= bestY + 0.5D) {
-                    continue;
+        for (int taken = 0; taken < Math.min(HEAD_RETRIES, heads.size()); taken++) {
+            int[] head = heads.get(taken);
+            int startX = head[0];
+            int startZ = head[1];
+            int layer = head[2];
+            double bestY = head[3];
+
+            // Then uphill for as long as it keeps climbing, which moves the head onto the crest above the
+            // candidate instead of leaving it partway down whatever slope it happened to land on.
+            for (int round = 0; round < CLIMB_ROUNDS; round++) {
+                boolean stepped = false;
+                for (int spoke = 0; spoke < 8; spoke++) {
+                    double angle = spoke / 8.0D * Math.PI * 2.0D;
+                    int x = (int) Math.round(startX + Math.sin(angle) * CLIMB_STEP);
+                    int z = (int) Math.round(startZ + Math.cos(angle) * CLIMB_STEP);
+                    SkyIslandDensity.Ground ground = terrain.at(x, z, layer);
+                    if (ground.mask() < INLAND || ground.surfaceY() <= bestY + 0.5D) {
+                        continue;
+                    }
+                    bestY = ground.surfaceY();
+                    startX = x;
+                    startZ = z;
+                    stepped = true;
                 }
-                bestY = ground.surfaceY();
-                startX = x;
-                startZ = z;
-                stepped = true;
+                if (!stepped) {
+                    break;
+                }
             }
-            if (!stepped) {
-                break;
-            }
-        }
 
-        List<Node> line = descend(terrain, startX, startZ, layer, Math.floorMod(hash >> 12, 4096L));
-        if (line == null || line.size() - 1 < MIN_RUN || !profile(line)) {
-            return null;
+            // Only a channel that made it to an edge is a stream. Anything else -- run out of length, run
+            // under a second island, run over a hole the landform noise took out of this one, run off a
+            // face too steep to hold water -- is thrown away whole rather than kept as far as it got.
+            // Keeping the stub is what left channels ending in open ground with nothing at the end of
+            // them, and there is no version of that which looks like anything but a mistake.
+            Walk walk = descend(terrain, startX, startZ, layer, Math.floorMod(hash >> 12, 4096L) + taken);
+            if (walk.ending() != Ending.EDGE) {
+                continue;
+            }
+            List<Node> line = walk.nodes();
+            // Asked of the far end, because that is where the water goes over. The rule is that a stream
+            // must not pour onto the barren surface, and only the last node has any say in whether it does.
+            Node foot = line.getLast();
+            if (!overWater(context, (int) Math.floor(foot.x()), (int) Math.floor(foot.z()))) {
+                continue;
+            }
+            return new Plan(startX, startZ, layer, line);
         }
-        // Asked of the far end, because that is where the water goes over. The rule is that a stream must
-        // not pour onto the barren surface, and only the last node has any say in whether it does.
-        Node foot = line.getLast();
-        if (!overWater(context, (int) Math.floor(foot.x()), (int) Math.floor(foot.z()))) {
-            return null;
-        }
-        return new Plan(startX, startZ, line);
+        return null;
     }
 
     /**
@@ -383,7 +520,17 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * known until the walk has finished. Null means it was still on the island at the longest run, which is
      * not a stream: water that never reaches an edge is a puddle.
      */
-    private static List<Node> descend(Terrain terrain, int startX, int startZ, int layer, long lane) {
+    private enum Ending { EDGE, COVERED, CLIFF, NO_ROCK, TOO_LONG }
+
+
+    private record Walk(List<Node> nodes, Ending ending) {
+    }
+
+    private static Walk end(List<Node> nodes, Ending ending) {
+        return new Walk(nodes, ending);
+    }
+
+    private static Walk descend(Terrain terrain, int startX, int startZ, int layer, long lane) {
         double px = startX + 0.5D;
         double pz = startZ + 0.5D;
 
@@ -408,15 +555,28 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             // The ground dropping faster than a channel could hold water on it, which stops a stream
             // carving a staircase down a face it should simply pour over. And a second island standing
             // over this column, where a channel would be a trench in the floor of a cave.
-            if (ground.mask() <= 0.0D || ground.covered()) {
-                return nodes;
+            if (ground.mask() <= 0.0D) {
+                return end(nodes, Ending.EDGE);
             }
+            if (ground.covered()) {
+                return end(nodes, Ending.COVERED);
+            }
+            // The steep fall is asked of the smooth field, not of the real surface. The real one jitters
+            // several blocks between neighbouring columns with the detail and landform noise on it, so a
+            // five block drop between one block and the next is ordinary texture there rather than the lip
+            // of anything, and testing against it ended half of all runs in the middle of open ground.
             if (step > 0 && ground.surfaceY() < previous - CLIFF) {
-                return nodes;
+                return end(nodes, Ending.CLIFF);
             }
             previous = ground.surfaceY();
+            // Where the generator will actually put the top block, not where the height field says it
+            // would. The channel is measured against this and against nothing else.
+            int top = terrain.trueSurface(px, pz, layer);
+            if (top == Integer.MIN_VALUE) {
+                return end(nodes, Ending.NO_ROCK);
+            }
             // The ground height rides in the bed field until profile turns it into an actual bed.
-            nodes.add(new Node(px, pz, angle, ground.surfaceY(), 0));
+            nodes.add(new Node(px, pz, angle, top, 0));
 
             if (step % STEER_EVERY == 0) {
                 double bestTurn = 0.0D;
@@ -436,7 +596,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             px += Math.sin(angle);
             pz += Math.cos(angle);
         }
-        return null;
+        return end(nodes, Ending.TOO_LONG);
     }
 
     /**
@@ -449,7 +609,18 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * @return false if the channel would have to cut deeper than a stream plausibly could, in which case
      *     there is no stream here at all
      */
-    private static boolean profile(List<Node> nodes) {
+    /** Whether a bed at this elevation has the rock under it to hold water. */
+    private static boolean footed(Terrain terrain, Node node, double bed) {
+        int floor = (int) Math.floor(bed);
+        for (int under = 1; under <= FLOOR_KEEP; under++) {
+            if (!terrain.solid(node.x(), floor - under, node.z())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean profile(Terrain terrain, List<Node> nodes, int layer) {
         int run = nodes.size() - 1;
         int maxDepth = BarrenSkiesConfig.STREAM_DEPTH.get();
         double bed = nodes.getFirst().bed() - 2.0D + SLOPE;
@@ -469,6 +640,29 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             // channel. That is a gorge rather than a stream, and it is thrown away rather than dug.
             if (node.bed() - bed > MAX_CUT) {
                 return false;
+            }
+            // The water has to sit on rock, and on enough of it. Checked against the same field the
+            // generator builds from, so a cave under the channel or a rim too thin to hold one is known
+            // now, rather than at carve time, where the only answers left are to raise this one column,
+            // which is a step back up, or to skip it, which is a pillar or a channel ending in open ground.
+            //
+            // Where there is none, the bed drops to find some, as far as the cut cap allows: deeper is
+            // always permitted -- it is up that the rule forbids -- so a shallow hollow under the channel
+            // is passed by running along the bottom of it, which is what water meeting one would do.
+            //
+            // A hollow too deep to reach the floor of is bridged rather than fatal. The carve lays a block
+            // under any floor that has nothing beneath it, so the channel crosses a cavern on its own bed
+            // and never opens into one, which is the thing worth preventing. Refusing the plan outright
+            // instead threw away a hundred and nineteen of the hundred and forty four channels that had
+            // reached an edge -- caves live at exactly the depth a stream is cut to, so almost every run
+            // meets one somewhere, and losing the whole run to one node of it left seven streams standing
+            // in seven thousand blocks.
+            double lowest = node.bed() - MAX_CUT;
+            while (bed > lowest && !footed(terrain, node, bed)) {
+                bed -= 1.0D;
+            }
+            if (bed < lowest) {
+                bed = lowest;
             }
             nodes.set(step, new Node(
                 node.x(), node.z(), node.angle(), bed,
@@ -498,6 +692,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         // At least the head stays wet however short the run and however long the lip.
         int lastWet = Math.max(0, nodes.size() - 1 - DRY_LIP);
         boolean wanted = false;
+        int deepest = Integer.MAX_VALUE;
 
         for (int step = 1; step < nodes.size(); step++) {
             Node from = nodes.get(step - 1);
@@ -520,14 +715,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                         sound(level, x, z, bandBottom, bandTop, slot, columns);
                     }
                     // V shaped: the floor rises a block for every block out from the middle, and no
-                    // further than the half width however far the bridging reach had to stretch.
-                    int wants = (int) Math.floor(node.bed()) + Math.min(node.half(), (int) Math.round(away));
+                    // further than the half width however far the bridging reach had to stretch. The
+                    // middle never rises along the run, whatever the clamp in claim does to it, because
+                    // the deepest anything has asked for so far is carried forward.
+                    int rung = Math.min(node.half(), (int) Math.round(away));
+                    int wants = Math.min(deepest, (int) Math.floor(node.bed())) + rung;
                     if (!claim(columns, slot, wants)) {
                         continue;
                     }
-                    // The later node wins, and the later node is the one nearer the drop, so a column the
-                    // lip reaches over stays dry even where a wet node also touched it.
-                    columns.wet()[slot] = step <= lastWet;
+                    if (rung == 0) {
+                        deepest = Math.min(deepest, columns.floor()[slot]);
+                        // Water only along the thread at the bottom of the channel. A source on the bank
+                        // sits a block higher than the one beside it and spills sideways out of the
+                        // channel; only the middle is a course, and only the middle was checked to be one.
+                        columns.wet()[slot] = step <= lastWet;
+                    }
                     wanted = true;
                 }
             }
@@ -545,21 +747,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static boolean claim(Columns columns, int slot, int wants) {
         int surface = columns.surface()[slot];
-        int bottom = columns.bottom()[slot];
-        if (surface == NO_SURFACE || surface - bottom < MIN_THICKNESS - 1) {
+        if (surface == NO_SURFACE) {
             return false;
         }
+        // Downward only. The plan was checked against the field the generator builds from, so it already
+        // knows this column has rock to spare; the only clamp left is against the block interpolation,
+        // which moves a surface by about one. Cutting a block deeper than asked is harmless. Raising the
+        // floor is not, and every version of this that was allowed to raise it put a step back up in the
+        // middle of a stream.
         int floor = Math.min(wants, surface - 1);
-        floor = Math.max(floor, surface - MAX_CUT);
-        // Leave rock under it, so the channel cannot open a slot through a rim.
-        floor = Math.max(floor, bottom + FLOOR_KEEP);
-        if (floor > surface - 1) {
-            // Too thin for a channel with rock to spare. Take what there is rather than passing over the
-            // column: one block of ground beneath the water and, where the island is thinner still, the
-            // surface block alone. Passing over it is what ended a channel short of the rim it was running
-            // for, since the columns too thin to cut are exactly the last few before an edge.
-            floor = Math.min(surface, Math.max(bottom + 1, surface - 1));
-        }
         if (columns.floor()[slot] == UNSCANNED || floor < columns.floor()[slot]) {
             columns.floor()[slot] = floor;
         }
