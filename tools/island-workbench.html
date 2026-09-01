@@ -680,9 +680,9 @@ var DEFAULTS = {
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
 
-  streamsOn: true, streamCell: 192, streamChance: 70, streamLength: 160, streamMinRun: 20,
-  streamInland: 0.15, streamFollow: 0.75, streamWiggle: 0.05, streamWidth: 2,
-  streamDepth: 5, streamSlope: 0.05, streamMaxCut: 14, streamCliff: 8, streamDryLip: 3,
+  streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 12,
+  streamInland: 0.17, streamFollow: 0.3, streamWiggle: 0.015, streamWidth: 1,
+  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamCliff: 5, streamDryLip: 5,
   streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
@@ -991,19 +991,44 @@ function planStream(cellX, cellZ) {
 }
 
 /** Every column the channel touches, with the elevation its floor is cut to there. */
+/* How far a column centre is from a stretch of the centre line. */
+function segmentDistance(px, pz, a, b) {
+  var dx = b.x - a.x, dz = b.z - a.z;
+  var len = dx * dx + dz * dz;
+  var t = len <= 0 ? 0 : ((px - a.x) * dx + (pz - a.z) * dz) / len;
+  t = t < 0 ? 0 : (t > 1 ? 1 : t);
+  return Math.hypot(px - (a.x + dx * t), pz - (a.z + dz * t));
+}
+
+/**
+ * Every column the channel touches, with the elevation its floor is cut to there.
+ *
+ * Claimed by distance from the path, not by stepping out along a perpendicular. Sampling offsets left
+ * holes: an offset rounds to a column, and on a diagonal two neighbouring nodes round to the same few
+ * columns while the one between them is never named at all, so it survives as a block of untouched ground
+ * standing full height in the finished channel. Anything under about 0.71 of reach also leaves consecutive
+ * nodes joined at a corner alone, and water does not flow diagonally.
+ */
+var STREAM_BRIDGE = 0.85;
+
 function streamPath(plan) {
   var out = [];
-  var lastWet = plan.nodes.length - 1 - S.streamDryLip;
-  for (var k = 0; k < plan.nodes.length; k++) {
-    var n = plan.nodes[k];
-    var sideX = Math.cos(n.angle), sideZ = -Math.sin(n.angle);
-    for (var off = -n.half; off <= n.half; off++) {
-      var d = Math.abs(off);
-      if (n.cut - d < 1) continue;
-      // V shaped: the floor steps up a block for every block out from the middle. The last few nodes are
-      // cut like the rest but carry no source, so what goes over the edge is water already moving.
-      out.push({ x: Math.floor(n.x + sideX * off), z: Math.floor(n.z + sideZ * off),
-                 floor: n.bed + d, cut: n.cut - d, along: n.along, wet: k <= lastWet });
+  var lastWet = Math.max(0, plan.nodes.length - 1 - S.streamDryLip);
+  for (var k = 1; k < plan.nodes.length; k++) {
+    var a = plan.nodes[k - 1], n = plan.nodes[k];
+    var radius = n.half + STREAM_BRIDGE;
+    var x0 = Math.floor(Math.min(a.x, n.x) - radius), x1 = Math.floor(Math.max(a.x, n.x) + radius);
+    var z0 = Math.floor(Math.min(a.z, n.z) - radius), z1 = Math.floor(Math.max(a.z, n.z) + radius);
+    for (var x = x0; x <= x1; x++) {
+      for (var z = z0; z <= z1; z++) {
+        var away = segmentDistance(x + 0.5, z + 0.5, a, n);
+        if (away > radius) continue;
+        // V shaped: the floor rises a block for every block out from the middle, and no further than the
+        // half width however far the bridging reach had to stretch. The last few nodes are cut like the
+        // rest but carry no source, so what goes over the edge is water already moving.
+        out.push({ x: x, z: z, floor: n.bed + Math.min(n.half, Math.round(away)),
+                   along: n.along, wet: k <= lastWet });
+      }
     }
   }
   return out;
@@ -1411,6 +1436,13 @@ function buildGrid(fast) {
   if (S.streamsOn) {
     var edge = N * cell / 2;
     var plans = streamsNear(S.originX - edge, S.originZ - edge, S.originX + edge, S.originZ + edge);
+    // Every stream is measured against the grid first and only then cut. A column is reached by several
+    // nodes, each wanting it at a slightly different depth, and cutting on every visit takes another
+    // block off each time -- the floor is always set to at least one below where the last pass left it,
+    // so a column touched five times ends up a shaft. Decide first and cut once: one floor a column, the
+    // lowest anything asked for.
+    var cutTo = new Float32Array(N * N);
+    cutTo.fill(NaN);
     for (var p = 0; p < plans.length; p++) {
       var path = streamPath(plans[p]);
       for (var k = 0; k < path.length; k++) {
@@ -1427,10 +1459,14 @@ function buildGrid(fast) {
         // plan, and never more than the deepest cut, so it cannot open a shaft.
         var floorY = Math.min(node.floor, surf[q] - 1);
         if (floorY < surf[q] - S.streamMaxCut) floorY = surf[q] - S.streamMaxCut;
-        surf[q] = floorY;
-        if (sTop[q * MAXSPANS] > floorY) sTop[q * MAXSPANS] = floorY;
-        if (node.wet) wet[q] = 1;
+        if (isNaN(cutTo[q]) || floorY < cutTo[q]) cutTo[q] = floorY;
+        wet[q] = node.wet ? 1 : 0;
       }
+    }
+    for (var q2 = 0; q2 < N * N; q2++) {
+      if (isNaN(cutTo[q2])) continue;
+      surf[q2] = cutTo[q2];
+      if (sTop[q2 * MAXSPANS] > cutTo[q2]) sTop[q2 * MAXSPANS] = cutTo[q2];
     }
   }
 

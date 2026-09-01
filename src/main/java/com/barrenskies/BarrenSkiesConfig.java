@@ -166,11 +166,11 @@ public final class BarrenSkiesConfig {
             .comment(
                 "How deep the stream channel is cut into an island top, in blocks.",
                 "Deepest along the middle of the channel and shallower towards the banks, so this is the",
-                "deepest it gets. Five cuts past the soil into the rock, which is what makes the banks read",
-                "as a gorge rather than a ditch."
+                "deepest it gets. Four cuts past the soil into the rock in most places, which is what makes the",
+                "banks read as a gorge rather than a ditch."
             )
             .translation("barrenskies.configuration.streamDepth")
-            .defineInRange("streamDepth", 5, 2, 12);
+            .defineInRange("streamDepth", 4, 2, 12);
 
         WATERFALLS_ONLY_OVER_WATER = b
             .comment(
