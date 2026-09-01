@@ -7,6 +7,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.CubicSpline;
+import net.minecraft.util.ToFloatFunction;
 import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
@@ -107,6 +108,102 @@ public final class SkyIslandDensity {
             }
         }
         return best;
+    }
+
+    /** The two things the shape splines read: how far inland a column is, and its ridge value. */
+    public record Shape(double mask, double ridge) {
+    }
+
+    /** One of those two, as a spline coordinate, so the deck can be evaluated without a density function. */
+    private record Axis(boolean ridge) implements ToFloatFunction<Shape> {
+        @Override
+        public float apply(Shape shape) {
+            return (float) (this.ridge ? shape.ridge() : shape.mask());
+        }
+
+        @Override
+        public float minValue() {
+            return -1000.0F;
+        }
+
+        @Override
+        public float maxValue() {
+            return 1000.0F;
+        }
+    }
+
+    /** The same deck the density is built from, as arithmetic over a mask and a ridge value. */
+    private static final CubicSpline<Shape, Axis> DECK_SHAPE =
+        SkyIslandDensity.<Shape, Axis>deck(new Axis(true), new Axis(false));
+
+    /**
+     * Where the island surface is at a column and how far inside an island that column is.
+     *
+     * @param surfaceY the top of the rock, or negative infinity where no layer has ground here
+     * @param mask how far inside an island; of one named layer if one was named, otherwise the best of all
+     * @param layer which layer is furthest inside here, whether or not a layer was named
+     */
+    public record Ground(double surfaceY, double mask, int layer) {
+        public boolean hasGround() {
+            return this.surfaceY > Double.NEGATIVE_INFINITY;
+        }
+    }
+
+    /**
+     * The island surface from the height field alone, without the 3D terms that texture it.
+     *
+     * <p>This is what anything planning across a distance has to work from. The height field is noise and
+     * answers for any coordinate; the surface the player actually walks on needs a chunk that has already
+     * been generated, and a stream is ten chunks long. The 3D terms move the ground a few blocks either
+     * way, which is texture; which way is downhill over a hundred and sixty blocks is this, and this is the
+     * answer that matters.
+     *
+     * <p>Layers whose deck has not risen above zero are skipped rather than compared. Their spline runs
+     * down past minus one, so an empty top layer sits about fifty blocks below its own centre, which is
+     * still higher than a real island two layers further down: comparing them by height alone would put the
+     * surface out in open sky.
+     *
+     * <p>The mask is asked of one layer when one is named. That is what keeps a stream on the island it
+     * started on. Taking the best of every layer means a channel that reaches the edge of its own island,
+     * finds a different island sixty blocks below and carries straight on over the gap between them.
+     *
+     * @param layer which layer to report the mask of, or -1 for the best of all of them
+     */
+    public static Ground ground(
+        NormalNoise islands, NormalNoise ridges, double x, double z,
+        int bandBottom, int bandTop, int layerCount, double threshold, double horizontalScale, int layer
+    ) {
+        double ridge = ridges.getValue(x, 0.0D, z);
+        int reach = layerReach();
+        int spacing = layerCount > 1 ? (bandTop - bandBottom) / (layerCount - 1) : 0;
+        double bestY = Double.NEGATIVE_INFINITY;
+        double topMask = Double.NEGATIVE_INFINITY;
+        double named = Double.NEGATIVE_INFINITY;
+        int topLayer = -1;
+
+        for (int i = 0; i < layerCount; i++) {
+            double shift = i * 4096.0D;
+            double mask = islands.getValue(x * horizontalScale + shift, 0.0D, z * horizontalScale + shift) - threshold;
+            if (mask > topMask) {
+                topMask = mask;
+                topLayer = i;
+            }
+            if (i == layer) {
+                named = mask;
+            }
+            if (mask <= 0.0D) {
+                continue;
+            }
+            double offset = DECK_SHAPE.apply(new Shape(mask, ridge));
+            if (offset <= 0.0D) {
+                continue;
+            }
+            double y = bandBottom + spacing * i + offset * reach;
+            if (y > bestY) {
+                bestY = y;
+            }
+        }
+        return new Ground(bestY, layer >= 0 ? named : topMask, topLayer);
     }
 
     private static ResourceKey<NormalNoise.NoiseParameters> noise(String path) {
@@ -287,22 +384,32 @@ public final class SkyIslandDensity {
         if (!upper) {
             return DensityFunctions.spline(underside(inland));
         }
-
-        // Ridge decides whether a stretch of island stands tall or low, and the bands are deliberately
-        // narrow: the height collapses across a tenth of ridge, which is what cuts terraces and cliff lines
-        // across a landmass. Values follow Skylands over the Sea.
         DensityFunctions.Spline.Coordinate ridge = new DensityFunctions.Spline.Coordinate(Holder.direct(ridgeField));
-        CubicSpline.Builder<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> spline =
-            CubicSpline.builder(ridge);
-        // Three deck heights rather than two, so a landmass steps between levels instead of being one
-        // uniform plate. The transitions stay narrow, which is what makes them read as cliffs.
+        return DensityFunctions.spline(deck(ridge, inland));
+    }
+
+    /**
+     * The deck: three heights selected by ridge, each of them a profile against how far inland a column is.
+     *
+     * <p>Ridge decides whether a stretch of island stands tall or low, and the bands are deliberately
+     * narrow: the height collapses across a tenth of ridge, which is what cuts terraces and cliff lines
+     * across a landmass. Three heights rather than two, so a landmass steps between levels instead of being
+     * one uniform plate. Values follow Skylands over the Sea.
+     *
+     * <p>Written against any spline coordinate rather than against density functions, because it is built
+     * twice: once into the world's density, and once as plain arithmetic for the stream planner, which has
+     * to know where the island surface is at coordinates no chunk exists at yet. A second copy of these
+     * control points written out by hand would drift from this one the moment either was tuned.
+     */
+    private static <C, I extends ToFloatFunction<C>> CubicSpline<C, I> deck(I ridge, I inland) {
+        CubicSpline.Builder<C, I> spline = CubicSpline.builder(ridge);
         spline.addPoint(-1.00F, top(inland, 1.095F, 1.240F));
         spline.addPoint(-0.49F, top(inland, 0.380F, 0.610F));
         spline.addPoint(-0.12F, top(inland, 0.125F, 0.160F));
         spline.addPoint(0.12F, top(inland, 0.125F, 0.160F));
         spline.addPoint(0.49F, top(inland, 0.380F, 0.610F));
         spline.addPoint(1.00F, top(inland, 1.095F, 1.240F));
-        return DensityFunctions.spline(spline.build());
+        return spline.build();
     }
 
     /**
@@ -343,10 +450,8 @@ public final class SkyIslandDensity {
      * column is still climbing, and a surface that climbs everywhere is a dome. The rise is compressed into
      * the first 0.05 so it reads as a cliff at the shoreline, and everything beyond is deck.
      */
-    private static CubicSpline<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate> top(
-        DensityFunctions.Spline.Coordinate inland, float shore, float deck
-    ) {
-        return CubicSpline.<DensityFunctions.Spline.Point, DensityFunctions.Spline.Coordinate>builder(inland)
+    private static <C, I extends ToFloatFunction<C>> CubicSpline<C, I> top(I inland, float shore, float deck) {
+        return CubicSpline.<C, I>builder(inland)
             // Firmly negative outside an island, so open sky stays open rather than resting on the
             // threshold at each layer height.
             .addPoint(-1.0F, -1.4F, 0.0F)
