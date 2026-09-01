@@ -466,6 +466,7 @@ footer.note strong { color: var(--ink-2); font-weight: 600; }
           <div><dt>Mask p50</dt><dd id="statP50">–</dd></div>
           <div><dt>Mask p90</dt><dd id="statP90">–</dd></div>
           <div><dt>Thickness</dt><dd id="statThick">–</dd></div>
+          <div><dt>Streams</dt><dd id="statStreams">–</dd></div>
         </dl>
       </div>
       <p class="hint" id="hint">Drag the view to travel. The dashed lines are the layer centres — islands hang below and stack above them.</p>
@@ -676,6 +677,9 @@ var DEFAULTS = {
   t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
 
   cavesOn: true, caveOct: -8, caveAmp: [1, 1],
+
+  streamsOn: true, streamCell: 192, streamChance: 70, streamLength: 160, streamMinRun: 20,
+  streamInland: 0.10, streamTurn: 0.10, streamDepth: 5, streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
 
@@ -685,7 +689,8 @@ function clone(o) { return JSON.parse(JSON.stringify(o)); }
 var noises = {}, noiseKey = "";
 function buildNoises() {
   var key = [S.seed, S.islandsOct, S.islandsAmp, S.ridgeOct, S.ridgeAmp,
-             S.detailOct, S.detailAmp, S.caveOct, S.caveAmp, S.t3Oct, S.t3Amp].join("|");
+             S.detailOct, S.detailAmp, S.caveOct, S.caveAmp, S.t3Oct, S.t3Amp,
+             S.streamOct, S.streamAmp].join("|");
   if (key === noiseKey) return;
   noiseKey = key;
   var b = S.seed >>> 0;
@@ -694,6 +699,7 @@ function buildNoises() {
   noises.detail  = new Normal(b, "island_detail", S.detailOct, S.detailAmp);
   noises.cave    = new Normal(b, "island_caves", S.caveOct, S.caveAmp);
   noises.t3      = new Normal(b, "island_terrain", S.t3Oct, S.t3Amp);
+  noises.stream  = new Normal(b, "island_streams", S.streamOct, S.streamAmp);
 }
 
 /* top(): steep rise at the shore, then a deck that never falls back. */
@@ -758,6 +764,122 @@ function column(x, z, deck, bowl) {
   return out;
 }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/* =====================================================================
+   Streams
+
+   The same planner the mod runs, ported the same way the noise was: the arithmetic matches, the hash does
+   not have to. Which cells hold a stream and where exactly it starts will differ from any given save; how
+   many there are, how far they run, how they curve and where they end will not, and those are the parts
+   worth looking at.
+
+   What is not modelled is the mod's last rule, that the far end has to stand over open sea. That depends on
+   the ground world's continentalness, which is Terralith's business and is not ported here, so expect the
+   game to show fewer streams than this does -- only the share of islands that happen to overhang water.
+   ===================================================================== */
+
+function streamHash(a, b) {
+  var h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263) ^ (S.seed | 0);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** How far inside an island a column is, as the mask sees it. Negative outside one. */
+function islandStrength(x, z) {
+  var best = -Infinity;
+  for (var i = 0; i < S.layers; i++) {
+    var shift = i * 4096;
+    var mask = noises.islands.get(x * S.hScale + shift, 0, z * S.hScale + shift) - S.threshold;
+    if (mask > best) best = mask;
+  }
+  return best;
+}
+
+/** How many steps the path takes before the island under it runs out. */
+function streamRun(sx, sz, heading, lane) {
+  var px = sx + 0.5, pz = sz + 0.5, angle = heading;
+  for (var step = 0; step <= S.streamLength; step++) {
+    angle += noises.stream.get(step * 0.28, lane, 0) * S.streamTurn;
+    px += Math.sin(angle);
+    pz += Math.cos(angle);
+    if (islandStrength(Math.floor(px), Math.floor(pz)) <= 0) return step;
+  }
+  return S.streamLength;
+}
+
+/** A start well inside an island, and the heading that reaches an edge soonest. */
+function planStream(cellX, cellZ) {
+  var h = streamHash(cellX, cellZ);
+  if (h % 100 >= S.streamChance) return null;
+
+  var sx = 0, sz = 0, onIsland = false;
+  for (var attempt = 0; attempt < 8 && !onIsland; attempt++) {
+    var pick = streamHash(cellX * 31 + attempt, cellZ * 17 - attempt);
+    sx = cellX * S.streamCell + (pick % S.streamCell);
+    sz = cellZ * S.streamCell + ((pick >>> 9) % S.streamCell);
+    onIsland = islandStrength(sx, sz) >= S.streamInland;
+  }
+  if (!onIsland) return null;
+
+  var lane = (h >>> 5) % 4096;
+  var best = null;
+  for (var spoke = 0; spoke < 8; spoke++) {
+    var heading = (spoke + ((h >>> 11) % 100) / 100) / 8 * Math.PI * 2;
+    var run = streamRun(sx, sz, heading, lane);
+    // The longest way out that still finds one. Taking the shortest is what water would do and it made
+    // every stream a stub off the nearest rim; the long way crosses the island, which is the point.
+    if (run >= S.streamMinRun && run < S.streamLength && (best === null || run > best.run)) {
+      best = { sx: sx, sz: sz, heading: heading, lane: lane, run: run };
+    }
+  }
+  return best;
+}
+
+/** Every column the stream touches, with how far along it is, how wide and how deep it is cut there. */
+function streamPath(plan) {
+  var out = [];
+  var px = plan.sx + 0.5, pz = plan.sz + 0.5, angle = plan.heading;
+  for (var step = 0; step <= plan.run; step++) {
+    angle += noises.stream.get(step * 0.28, plan.lane, 0) * S.streamTurn;
+    px += Math.sin(angle);
+    pz += Math.cos(angle);
+
+    var along = step / plan.run;
+    var half = along < 0.30 ? 0 : (along < 0.65 ? 1 : 2);
+    var depth = 2 + Math.round((S.streamDepth - 2) * along);
+    var sideX = Math.cos(angle), sideZ = -Math.sin(angle);
+
+    for (var offset = -half; offset <= half; offset++) {
+      var cut = depth - Math.abs(offset);
+      if (cut < 2) continue;
+      out.push({
+        x: Math.floor(px + sideX * offset),
+        z: Math.floor(pz + sideZ * offset),
+        cut: cut,
+        along: along
+      });
+    }
+  }
+  return out;
+}
+
+/** Every stream whose start lies within reach of the given world box. */
+function streamsNear(minX, minZ, maxX, maxZ) {
+  if (!S.streamsOn) return [];
+  var pad = S.streamLength + 8;
+  var c0x = Math.floor((minX - pad) / S.streamCell);
+  var c1x = Math.floor((maxX + pad) / S.streamCell);
+  var c0z = Math.floor((minZ - pad) / S.streamCell);
+  var c1z = Math.floor((maxZ + pad) / S.streamCell);
+  var found = [];
+  for (var cx = c0x; cx <= c1x; cx++) {
+    for (var cz = c0z; cz <= c1z; cz++) {
+      var plan = planStream(cx, cz);
+      if (plan) found.push(plan);
+    }
+  }
+  return found;
+}
 
 /* Splines and scratch context are built once per render, never per block. */
 var CAVE_SP = null;
@@ -844,6 +966,7 @@ function css(name) {
 }
 var PAL = {
   grass: [104, 142, 74],
+  water: [86, 132, 196],
   dirt:  [122, 94, 66],
   stone: [128, 133, 138],
   deep:  [96, 100, 106]
@@ -942,6 +1065,7 @@ function drawOverlay(yr, box) {
 }
 
 var lastStats = null;
+var lastStreams = 0;
 
 function renderMap(step) {
   var N = Math.ceil(192 / step);
@@ -993,8 +1117,49 @@ function renderMap(step) {
       d[o+3] = 255;
     }
   }
+  drawStreams(d, N, blocks);
   mctx.putImageData(img, 0, 0);
   fitFrame(frameOf(mapc), 1);
+}
+
+/**
+ * Paints the planned streams over the map.
+ *
+ * <p>Drawn from the plan rather than from anything carved, so it shows what the mod would cut whether or
+ * not the island under it turns out to have ground: a stream that runs off into open sky is exactly the
+ * kind of mistake this is here to make visible.
+ */
+function drawStreams(d, N, blocks) {
+  if (!S.streamsOn) return;
+  var half = N * blocks / 2;
+  var minX = S.originX - half, maxX = S.originX + half;
+  var minZ = S.originZ - half, maxZ = S.originZ + half;
+  var plans = streamsNear(minX, minZ, maxX, maxZ);
+  lastStreams = plans.length;
+
+  for (var p = 0; p < plans.length; p++) {
+    var path = streamPath(plans[p]);
+    for (var k = 0; k < path.length; k++) {
+      var node = path[k];
+      var i = Math.round((node.x - S.originX) / blocks + N / 2);
+      var j = Math.round((node.z - S.originZ) / blocks + N / 2);
+      if (i < 0 || j < 0 || i >= N || j >= N) continue;
+      var o = (j * N + i) * 4;
+      // Paler where it is shallow near the head, deeper blue where it has cut down by the edge.
+      var t = node.along;
+      d[o] = 70 + 40 * (1 - t);
+      d[o + 1] = 120 + 50 * (1 - t);
+      d[o + 2] = 190 + 40 * (1 - t);
+      d[o + 3] = 255;
+    }
+    // The head, so it is obvious where each one begins.
+    var hi = Math.round((plans[p].sx - S.originX) / blocks + N / 2);
+    var hj = Math.round((plans[p].sz - S.originZ) / blocks + N / 2);
+    if (hi >= 0 && hj >= 0 && hi < N && hj < N) {
+      var ho = (hj * N + hi) * 4;
+      d[ho] = 235; d[ho + 1] = 220; d[ho + 2] = 90; d[ho + 3] = 255;
+    }
+  }
 }
 
 /* =====================================================================
@@ -1018,7 +1183,9 @@ function buildGrid(fast) {
              L, S.ridgeOn, S.bowlOn, S.shoreAt, S.deckAt, S.bandInner, S.bandOuter,
              S.deckLow, S.deckHigh, S.deckOuter, S.bowl,
              S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash,
-             S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march].join("|");
+             S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
+             S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
+             S.streamInland, S.streamTurn, S.streamDepth].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
@@ -1083,6 +1250,28 @@ function buildGrid(fast) {
   // Lambert shading off the real surface normal. The old version scaled slope so gently that a deck
   // with a block or two of undulation came out one flat colour, which is exactly the variation that
   // most needs to be visible.
+  // Streams are cut after the rock is worked out and before it is shaded, so the channel gets its own
+  // lighting from its own walls rather than the shading of the ground it was cut out of.
+  var wet = new Uint8Array(N * N);
+  if (S.streamsOn) {
+    var edge = N * cell / 2;
+    var plans = streamsNear(S.originX - edge, S.originZ - edge, S.originX + edge, S.originZ + edge);
+    for (var p = 0; p < plans.length; p++) {
+      var path = streamPath(plans[p]);
+      for (var k = 0; k < path.length; k++) {
+        var node = path[k];
+        var gi = Math.round((node.x - x0) / cell);
+        var gj = Math.round((node.z - z0) / cell);
+        if (gi < 0 || gj < 0 || gi >= N || gj >= N) continue;
+        var q = gj * N + gi;
+        if (isNaN(surf[q]) || !count[q]) continue;
+        surf[q] -= node.cut;
+        sTop[q * MAXSPANS] -= node.cut;
+        wet[q] = 1;
+      }
+    }
+  }
+
   var lx = -0.55, ly = 0.68, lz = -0.48;
   var ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
   lx /= ll; ly /= ll; lz /= ll;
@@ -1100,7 +1289,7 @@ function buildGrid(fast) {
     }
   }
   GRID = { N: N, cell: cell, x0: x0, z0: z0, sTop: sTop, sBot: sBot,
-           count: count, surf: surf, lit: lit };
+           count: count, surf: surf, lit: lit, wet: wet };
 }
 
 function render3D(coarse, keepGrid) {
@@ -1167,7 +1356,7 @@ function render3D(coarse, keepGrid) {
         // Only the topmost span of a column is open sky above it. Anything lower is the floor of a
         // cave, so it takes rock rather than grass and sits in shadow.
         var open = spanTop >= colSurf - 0.5;
-        var capCol = open ? PAL.grass : PAL.stone;
+        var capCol = open ? (g.wet[ci] ? PAL.water : PAL.grass) : PAL.stone;
         var capShade = open ? colLit : 0.40;
         for (var py = yT; py <= yB; py++) {
           var isCap = py < capTo;
@@ -1248,6 +1437,7 @@ function showStats() {
   document.getElementById("statP50").textContent = lastStats.p50.toFixed(3);
   document.getElementById("statP90").textContent = lastStats.p90.toFixed(3);
   document.getElementById("statThick").textContent = Math.round(lastStats.thick) + " blk";
+  document.getElementById("statStreams").textContent = lastStreams;
 }
 
 /* =====================================================================
@@ -1376,7 +1566,28 @@ var GROUPS = [
     ]
   },
   {
-    num: "07", title: "Caves", open: false,
+    num: "07", title: "Streams", open: true,
+    blurb: "A channel planned from a point well inside an island out to the nearest edge, deepening and widening as it goes. Shown on the map as its full planned line; cut into the 3D view where it crosses.",
+    items: [
+      { type: "toggle", k: "streamsOn", label: "Island streams",
+        note: "The mod also requires open sea below the far end, which this cannot know — the ground world is Terralith's. Expect the game to show fewer than this does." },
+      { k: "streamChance", label: "Cells with a stream (%)", min: 0, max: 100, step: 5, dp: 0 },
+      { k: "streamCell", label: "Spacing between candidates", min: 64, max: 512, step: 16, dp: 0,
+        note: "One candidate per square of this size. Near an island width gives about one stream per island." },
+      { k: "streamLength", label: "Longest run", min: 40, max: 320, step: 10, dp: 0,
+        note: "A stream that has not left the island by here is abandoned, so this has to be more than an island radius or nothing qualifies." },
+      { k: "streamMinRun", label: "Shortest run", min: 4, max: 80, step: 2, dp: 0,
+        note: "Below this it is a notch in a rim rather than a stream." },
+      { k: "streamInland", label: "How far inside it starts", min: 0, max: 0.5, step: 0.01, dp: 2,
+        note: "Measured on the island mask, where half of all island ground sits below 0.13. Raise it and starts move towards the middle, but fewer of them find an edge within the longest run." },
+      { k: "streamTurn", label: "Snake", min: 0, max: 0.4, step: 0.01, dp: 2 },
+      { k: "streamDepth", label: "Depth at the edge", min: 2, max: 12, step: 1, dp: 0,
+        note: "How far it has cut down by the time it goes over. It starts at two and reaches this, and that difference is the slope." },
+      { k: "streamOct", label: "Snake noise octave", min: -10, max: -4, step: 1, dp: 0 }
+    ]
+  },
+  {
+    num: "08", title: "Caves", open: false,
     blurb: "Cut where a 3D noise passes through zero, which traces connected tunnels rather than isolated pockets.",
     items: [
       { type: "toggle", k: "cavesOn", label: "Carve caves" },
@@ -1559,6 +1770,11 @@ function writeOut() {
     },
     underside: { enabled: S.bowlOn, points: S.bowl.map(function (p) { return [round(p[0], 4), round(p[1], 5)]; }) },
     detail: { enabled: S.detailOn, strength: round(S.detailStrength, 4), firstOctave: S.detailOct, amplitudes: S.detailAmp },
+    streams: { enabled: S.streamsOn, chance: S.streamChance, cell: S.streamCell,
+               longestRun: S.streamLength, shortestRun: S.streamMinRun,
+               startsInsideMask: round(S.streamInland, 3), snake: round(S.streamTurn, 3),
+               depthAtEdge: S.streamDepth, snakeOctave: S.streamOct,
+               visibleHere: lastStreams },
     landformNoise: { enabled: S.t3On, strength: round(S.t3Strength, 4), firstOctave: S.t3Oct,
                      verticalSquash: round(S.t3Squash, 3),
                      amplitudes: S.t3Amp.map(function (v) { return round(v, 3); }) },
@@ -1711,6 +1927,7 @@ window.__bs = {
   state: S, noises: noises, evalSpline: evalSpline, caveSpline: caveSpline,
   deckSpline: deckSpline, bowlSpline: bowlSpline, column: column, density: density,
   extra3d: extra3d, layerValue: layerValue, solidAt: solidAt,
+  streamsNear: streamsNear, streamPath: streamPath, planStream: planStream, islandStrength: islandStrength,
   // Synchronous. request() only schedules a frame, so anything measuring a noise it just changed
   // has to rebuild here first or it reads the previous one.
   buildNoises: buildNoises, noiseOf: function () { return noises; },
