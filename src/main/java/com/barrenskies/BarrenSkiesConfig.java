@@ -17,7 +17,7 @@ public final class BarrenSkiesConfig {
     public static final ModConfigSpec.DoubleValue LANDFORM_SQUASH;
     public static final ModConfigSpec.BooleanValue ISLAND_WATERFALLS;
     public static final ModConfigSpec.IntValue WATERFALL_ISLAND_CHANCE;
-    public static final ModConfigSpec.IntValue WATERFALLS_PER_ISLAND;
+    public static final ModConfigSpec.IntValue STREAM_DEPTH;
     public static final ModConfigSpec.BooleanValue WATERFALLS_ONLY_OVER_WATER;
     public static final ModConfigSpec.BooleanValue ISLAND_WATER;
     public static final ModConfigSpec.BooleanValue ALTITUDE_COOLING;
@@ -162,14 +162,15 @@ public final class BarrenSkiesConfig {
             .translation("barrenskies.configuration.waterfallIslandChance")
             .defineInRange("waterfallIslandChance", 45, 0, 100);
 
-        WATERFALLS_PER_ISLAND = b
+        STREAM_DEPTH = b
             .comment(
-                "How many streams an island that has water may have.",
-                "An upper limit rather than a count: each one still needs a rim that runs downhill and open",
-                "sea below it, so an island will often have fewer."
+                "How deep the stream channel is cut into an island top, in blocks.",
+                "Deepest along the middle of the channel and shallower towards the banks, so this is the",
+                "deepest it gets. Five cuts past the soil into the rock, which is what makes the banks read",
+                "as a gorge rather than a ditch."
             )
-            .translation("barrenskies.configuration.waterfallsPerIsland")
-            .defineInRange("waterfallsPerIsland", 2, 1, 8);
+            .translation("barrenskies.configuration.streamDepth")
+            .defineInRange("streamDepth", 5, 2, 12);
 
         WATERFALLS_ONLY_OVER_WATER = b
             .comment(

@@ -111,6 +111,10 @@ public final class BarrenSkiesWorldgen {
             com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL,
             new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-5, 1.0D, 0.6D, 0.3D)
         );
+        context.register(
+            com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_STREAMS,
+            new net.minecraft.world.level.levelgen.synth.NormalNoise.NoiseParameters(-7, 1.0D, 0.4D)
+        );
         // Cave tunnels are cut where this passes through zero, so its wavelength sets both the tunnel
         // spacing and, less obviously, the tunnel width. The carving spline dips over a fixed band of noise
         // values, and how many blocks the noise takes to cross that band is what the tunnel diameter

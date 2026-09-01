@@ -37,6 +37,12 @@ public final class SkyIslandDensity {
     public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_LANDFORM = noise("island_landform");
 
     /**
+     * Where streams run across the island tops. Long wavelength, so a channel is a wide slow curve rather
+     * than a wiggle, and there are few enough of them that an island gets one or two rather than a network.
+     */
+    public static final ResourceKey<NormalNoise.NoiseParameters> ISLAND_STREAMS = noise("island_streams");
+
+    /**
      * Fine surface texture, in density units. One unit moves the surface a whole layer reach, so this is
      * about a block and a half of undulation. The landform noise below is the same idea at landform scale.
      */

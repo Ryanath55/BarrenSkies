@@ -13,7 +13,7 @@
   "barrenskies.configuration.islandCaves": "Caves in islands",
   "barrenskies.configuration.islandWaterfalls": "Island waterfalls",
   "barrenskies.configuration.waterfallIslandChance": "Islands with water (%)",
-  "barrenskies.configuration.waterfallsPerIsland": "Streams per island",
+  "barrenskies.configuration.streamDepth": "Stream channel depth",
   "barrenskies.configuration.waterfallsOnlyOverWater": "Only over sea or river",
   "barrenskies.configuration.landformNoise": "Landform noise",
   "barrenskies.configuration.landformStrength": "Landform noise strength",
