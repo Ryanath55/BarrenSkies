@@ -49,7 +49,7 @@ import net.minecraft.world.level.material.Fluids;
  */
 public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** Grid the stream heads are hashed over. Roughly one candidate per island. */
-    private static final int CELL = 240;
+    private static final int CELL = 160;
 
     /** How far a stream runs before it gives up, if the island has not already ended under it. */
     private static final int LENGTH = 120;
