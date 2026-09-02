@@ -42,7 +42,7 @@ public final class BarrenSkiesConfig {
             .comment("Lowest Y level that counts as the sky island layer. Everything below this uses the barren surface / cave biome pool.",
                 "Ground terrain reaches Y 320, so keep this above 360 or island undersides will punch through peaks.")
             .translation("barrenskies.configuration.skyIslandBottom")
-            .defineInRange("skyIslandBottom", 380, 0, 950);
+            .defineInRange("skyIslandBottom", 340, 0, 600);
 
         SKY_ISLAND_TOP = b
             .comment(
@@ -58,7 +58,7 @@ public final class BarrenSkiesConfig {
                 "temperature freezes everything above about Y 600. That, not world height, is what limits it."
             )
             .translation("barrenskies.configuration.skyIslandTop")
-            .defineInRange("skyIslandTop", 560, 0, 950);
+            .defineInRange("skyIslandTop", 480, 0, 600);
 
 
         ISLAND_LAYERS = b

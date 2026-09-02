@@ -1,0 +1,56 @@
+{
+  "values": [
+    {
+      "id": "minecraft:shipwreck",
+      "required": false
+    },
+    {
+      "id": "minecraft:shipwreck_beached",
+      "required": false
+    },
+    {
+      "id": "minecraft:ocean_ruin_cold",
+      "required": false
+    },
+    {
+      "id": "minecraft:ocean_ruin_warm",
+      "required": false
+    },
+    {
+      "id": "minecraft:buried_treasure",
+      "required": false
+    },
+    {
+      "id": "minecraft:monument",
+      "required": false
+    },
+    {
+      "id": "minecraft:mineshaft",
+      "required": false
+    },
+    {
+      "id": "minecraft:mineshaft_mesa",
+      "required": false
+    },
+    {
+      "id": "minecraft:stronghold",
+      "required": false
+    },
+    {
+      "id": "minecraft:ancient_city",
+      "required": false
+    },
+    {
+      "id": "minecraft:trial_chambers",
+      "required": false
+    },
+    {
+      "id": "minecraft:trail_ruins",
+      "required": false
+    },
+    {
+      "id": "minecraft:ruined_portal_ocean",
+      "required": false
+    }
+  ]
+}

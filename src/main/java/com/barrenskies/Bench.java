@@ -125,6 +125,57 @@ public final class Bench {
             + "so the clearance is {} blocks. Column tops by 32 block band: {}",
             highest, floor, floor - highest, byBand.descendingMap());
 
+        // What the generator tells a structure the surface is, against where the ground actually stops.
+        // A structure that wants the sea floor asks this, and if it comes back with an island the
+        // structure is built on the island -- or, once the island is not solid all the way down, in the
+        // air beside it. That is the shape of the flying shipwrecks.
+        var generator = event.getServer().overworld().getChunkSource().getGenerator();
+        var randomState = event.getServer().overworld().getChunkSource().randomState();
+        int agreed = 0;
+        int aboveGround = 0;
+        int worst = 0;
+        for (int i = 0; i < 400; i++) {
+            int x = 32000 + (i % 20) * 37;
+            int z = 32000 + (i / 20) * 41;
+            int asked = generator.getBaseHeight(x, z, net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG,
+                level, randomState);
+            if (asked <= floor) {
+                agreed++;
+            } else {
+                aboveGround++;
+                worst = Math.max(worst, asked);
+            }
+        }
+        BarrenSkies.LOG.info("[bench] the overworld generator is {}", generator.getClass().getName());
+
+        // The same question asked on behalf of different structures. A shipwreck must never be offered an
+        // island; a village may have one. Nothing asking at all is a world spawn and wants the ground.
+        var structures = event.getServer().registryAccess()
+            .registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+        for (String name : new String[] { "minecraft:shipwreck", "minecraft:ocean_ruin_warm",
+            "minecraft:mineshaft", "minecraft:village_plains", "minecraft:pillager_outpost" }) {
+            var structure = structures.get(net.minecraft.resources.ResourceLocation.parse(name));
+            if (structure == null) {
+                continue;
+            }
+            com.barrenskies.worldgen.StructureIntent.begin(structure, event.getServer().registryAccess());
+            int offered = 0;
+            for (int i = 0; i < 400; i++) {
+                int x = 32000 + (i % 20) * 37;
+                int z = 32000 + (i / 20) * 41;
+                if (generator.getBaseHeight(x, z, net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG,
+                    level, randomState) > floor) {
+                    offered++;
+                }
+            }
+            BarrenSkies.LOG.info("[bench] {}: wants ground {}, offered an island in {} of 400 columns",
+                name, com.barrenskies.worldgen.StructureIntent.wantsGround(), offered);
+            com.barrenskies.worldgen.StructureIntent.end();
+        }
+        BarrenSkies.LOG.info("[bench] of 400 columns asked for a surface height, {} answered below the island "
+            + "floor and {} answered above it, the highest at Y {}. Anything above the floor is an island "
+            + "being offered to a structure that wanted the ground.", agreed, aboveGround, worst);
+
         var chunk = level.getChunk(2000, 2000, ChunkStatus.FULL, true);
         BarrenSkies.LOG.info("[bench] world is Y {} to {}, {} sections a chunk, dimension {}.",
             level.getMinBuildHeight(), level.getMaxBuildHeight(), chunk.getSections().length,

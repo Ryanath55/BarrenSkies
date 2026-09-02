@@ -24,6 +24,17 @@ public final class BarrenSkiesTags {
      */
     public static final TagKey<Biome> DENIED_IN_SKY = biomeTag("denied_in_sky");
 
+    /**
+     * Structures that must be given the ground and never an island.
+     *
+     * <p>Ocean and underground ones: a shipwreck wants the sea floor, a mineshaft wants rock. Anything not
+     * in here may stand on an island if the column it lands on has one, which is what a village or an
+     * outpost should be allowed to do. A structure whose own biome list is entirely water counts as being
+     * in here whether or not anyone listed it, so a modded shipwreck behaves without being named.
+     */
+    public static final TagKey<net.minecraft.world.level.levelgen.structure.Structure> GROUND_ONLY_STRUCTURES =
+        TagKey.create(Registries.STRUCTURE, ResourceLocation.fromNamespaceAndPath(BarrenSkies.MOD_ID, "ground_only"));
+
     private static TagKey<Biome> biomeTag(String name) {
         return TagKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath(BarrenSkies.MOD_ID, name));
     }

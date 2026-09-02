@@ -61,6 +61,62 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         this.baseSettings = settings;
     }
 
+    /**
+     * Where the surface of a column is, asked of the ground and never of the islands.
+     *
+     * <p>Two different questions get asked of one number. Generating the world wants the islands in: they
+     * are terrain. Asking where the surface is almost always does not, because the things that ask are
+     * structures, and a structure that wants the sea floor and is handed an island builds on the island.
+     * Measured: of four hundred columns asked for a surface height, seventy three came back with an
+     * island -- the share of the sky the islands cover, as it should be. Those seventy three are the
+     * flying shipwrecks, and the mineshafts hanging in the air are the same query with a different
+     * structure on the end of it.
+     *
+     * <p>Answered by lowering the ceiling of the search rather than by taking the islands out of the
+     * density. Taking them out is the obvious move and it does not work: the column is sampled through a
+     * NoiseChunk, and a NoiseChunk takes its router from the RandomState the level was built with, not
+     * from the settings it is handed. A second generator carrying a second set of settings makes no
+     * difference at all -- measured, it changed the count by not one column. A search that cannot look
+     * above the island floor can only return ground, and needs nothing rewired to say so.
+     *
+     * <p>The cost is that no structure will place on an island. None was placing on one properly anyway,
+     * and giving them islands to stand on is its own piece of work: they would need the island's own
+     * heightmap, and most want a shoreline or a cave mouth that an island has not got.
+     */
+    private static net.minecraft.world.level.LevelHeightAccessor groundOnly(
+        net.minecraft.world.level.LevelHeightAccessor level
+    ) {
+        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach();
+        int bottom = level.getMinBuildHeight();
+        int height = Math.min(level.getHeight(), Math.max(16, floor - bottom));
+        return net.minecraft.world.level.LevelHeightAccessor.create(bottom, height);
+    }
+
+    @Override
+    public int getBaseHeight(
+        int x, int z, net.minecraft.world.level.levelgen.Heightmap.Types type,
+        net.minecraft.world.level.LevelHeightAccessor level,
+        net.minecraft.world.level.levelgen.RandomState randomState
+    ) {
+        return super.getBaseHeight(
+            x, z, type,
+            com.barrenskies.worldgen.StructureIntent.wantsGround() ? groundOnly(level) : level,
+            randomState
+        );
+    }
+
+    @Override
+    public net.minecraft.world.level.NoiseColumn getBaseColumn(
+        int x, int z, net.minecraft.world.level.LevelHeightAccessor level,
+        net.minecraft.world.level.levelgen.RandomState randomState
+    ) {
+        return super.getBaseColumn(
+            x, z,
+            com.barrenskies.worldgen.StructureIntent.wantsGround() ? groundOnly(level) : level,
+            randomState
+        );
+    }
+
     @Override
     protected MapCodec<? extends NoiseBasedChunkGenerator> codec() {
         return CODEC;
@@ -92,7 +148,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         int baseQuartZ = net.minecraft.core.QuartPos.fromBlock(chunk.getPos().getMinBlockZ());
         byte[] claimed = new byte[16];
         @SuppressWarnings("unchecked")
-        Holder<net.minecraft.world.level.biome.Biome>[] ground = new Holder[16];
+        Holder<net.minecraft.world.level.biome.Biome>[] groundBiome = new Holder[16];
 
         net.minecraft.world.level.biome.BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
             if (net.minecraft.core.QuartPos.toBlock(quartY) < floor) {
@@ -126,10 +182,10 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             if (slot < 0) {
                 return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
-            if (ground[slot] == null) {
-                ground[slot] = this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
+            if (groundBiome[slot] == null) {
+                groundBiome[slot] = this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
-            return ground[slot];
+            return groundBiome[slot];
         };
 
         return java.util.concurrent.CompletableFuture.supplyAsync(
@@ -141,7 +197,23 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         );
     }
 
-    /** Rebuilds the world's noise settings with the islands added and room above for them to sit in. */
+    /**
+     * The highest a layer centre may sit and still have its island fit under the world ceiling.
+     *
+     * <p>Rock fades out twice the layer reach above a centre, so a band top left where the config asks
+     * for it can want ground above the top of the world, and what it gets instead is a flat slice where
+     * the island was cut off by the build limit. Only bites where the two have been set against each
+     * other -- a tall island band in a world sized for a shorter one -- which is exactly what happens
+     * when the defaults move and an existing config file does not.
+     */
+    private static int ceilingFor(int reach) {
+        return BarrenSkiesWorldgen.WORLD_MIN_Y + BarrenSkiesWorldgen.WORLD_HEIGHT - 1 - reach * 2;
+    }
+
+    /**
+     * Rebuilds the world's noise settings with the islands added and room above for them to sit in.
+     *
+     */
     private static NoiseGeneratorSettings withIslands(
         Holder<NoiseGeneratorSettings> base,
         Holder<NormalNoise.NoiseParameters> islandNoise,
@@ -153,14 +225,20 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         NoiseGeneratorSettings settings = base.value();
         NoiseRouter router = settings.noiseRouter();
 
+        int reach = SkyIslandDensity.layerReach();
+        int bandBottom = Math.min(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), ceilingFor(reach));
+        int bandTop = Math.min(
+            Math.max(bandBottom, BarrenSkiesConfig.SKY_ISLAND_TOP.get()), ceilingFor(reach)
+        );
+
         DensityFunction islands = SkyIslandDensity.build(
             islandNoise,
             ridgeNoise,
             detailNoise,
             caveNoise,
             landformNoise,
-            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
-            Math.max(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), BarrenSkiesConfig.SKY_ISLAND_TOP.get()),
+            bandBottom,
+            bandTop,
             BarrenSkiesConfig.ISLAND_LAYERS.get(),
             BarrenSkiesConfig.ISLAND_THRESHOLD.get(),
             BarrenSkiesConfig.ISLAND_SCALE.get()
@@ -180,8 +258,8 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             // Only the final density carries the islands. The other one sets the preliminary surface level,
             // which is a single height per column: folding islands into it moved that level up to the
             // island, so the ground underneath never met its own surface rules and was left bare stone.
-            // Structures are unaffected: height queries read the final density, not this one, which is why
-            // Skylands over the Sea ships no structure files of its own.
+            // Structures do read the final density, and that is exactly why they needed the separate
+            // answer above -- see getBaseHeight.
             router.initialDensityWithoutJaggedness(),
             DensityFunctions.max(router.finalDensity(), islands),
             router.veinToggle(),

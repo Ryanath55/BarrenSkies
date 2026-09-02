@@ -43,6 +43,7 @@ public final class BarrenSkiesDataGen {
         // The tag references the preset this provider generates, so it needs the patched lookup rather than the vanilla one.
         generator.addProvider(event.includeServer(), new PresetTagProvider(output, entries.getRegistryProvider(), event.getExistingFileHelper()));
         generator.addProvider(event.includeServer(), new BiomeTagProvider(output, lookup, event.getExistingFileHelper()));
+        generator.addProvider(event.includeServer(), new StructureTagProvider(output, entries.getRegistryProvider(), event.getExistingFileHelper()));
     }
 
     /** Biomes other mods intend to float in the sky, which the climate rules would otherwise leave on the ground. */
@@ -97,6 +98,33 @@ public final class BarrenSkiesDataGen {
             NEVER_PAINTED.forEach(id -> neverPainted.addOptional(ResourceLocation.parse(id)));
 
             this.tag(BarrenSkiesTags.ALLOWED_ON_SURFACE);
+        }
+    }
+
+    /**
+     * Structures that must be given the ground rather than an island: the ocean ones and the underground
+     * ones. Optional throughout, since a pack may not have all of them, and overridable by datapack.
+     */
+    private static final List<String> GROUND_ONLY_STRUCTURES = List.of(
+        "minecraft:shipwreck", "minecraft:shipwreck_beached",
+        "minecraft:ocean_ruin_cold", "minecraft:ocean_ruin_warm",
+        "minecraft:buried_treasure", "minecraft:monument",
+        "minecraft:mineshaft", "minecraft:mineshaft_mesa",
+        "minecraft:stronghold", "minecraft:ancient_city", "minecraft:trial_chambers",
+        "minecraft:trail_ruins", "minecraft:ruined_portal_ocean"
+    );
+
+    private static final class StructureTagProvider
+        extends TagsProvider<net.minecraft.world.level.levelgen.structure.Structure> {
+        StructureTagProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> lookup, ExistingFileHelper existingFileHelper) {
+            super(output, Registries.STRUCTURE, lookup, BarrenSkies.MOD_ID, existingFileHelper);
+        }
+
+        @Override
+        protected void addTags(HolderLookup.Provider provider) {
+            TagAppender<net.minecraft.world.level.levelgen.structure.Structure> ground =
+                this.tag(BarrenSkiesTags.GROUND_ONLY_STRUCTURES);
+            GROUND_ONLY_STRUCTURES.forEach(id -> ground.addOptional(ResourceLocation.parse(id)));
         }
     }
 

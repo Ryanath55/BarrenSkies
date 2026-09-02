@@ -46,8 +46,14 @@ public final class BarrenSkiesWorldgen {
      * the same rate as ground. The highest an island reaches is the top of its band plus twice the layer
      * reach, which at the defaults is Y 644; this leaves sixty blocks over that and is the smallest
      * multiple of sixteen that does. It was 1024, which bought three hundred blocks of nothing.
+     *
+     * <p>Measured over four thousand columns, the highest ground Terralith puts under the islands is Y 251,
+     * so the band came down to sit closer to it: the lowest island is now at 298 rather than 338. Lowering
+     * the top is worth more than the speed, though. Minecraft drops biome temperature with altitude and
+     * everything above about Y 600 freezes whatever biome it was given, and the top layer used to reach
+     * 644 -- permanently snowy by arithmetic rather than by choice. It now stops at 564.
      */
-    public static final int WORLD_HEIGHT = 768;
+    public static final int WORLD_HEIGHT = 688;
 
     public static final ResourceKey<DimensionType> DIMENSION_TYPE = ResourceKey.create(Registries.DIMENSION_TYPE, id("barren_skies"));
     public static final ResourceKey<NoiseGeneratorSettings> NOISE_SETTINGS = ResourceKey.create(Registries.NOISE_SETTINGS, id("barren_skies"));
