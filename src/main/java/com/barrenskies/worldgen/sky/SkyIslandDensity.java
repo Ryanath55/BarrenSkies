@@ -460,8 +460,10 @@ public final class SkyIslandDensity {
                 )
             );
 
-            DensityFunction top = DensityFunctions.flatCache(DensityFunctions.cache2d(surface(ridgeField, mask, true)));
-            DensityFunction bottom = DensityFunctions.flatCache(DensityFunctions.cache2d(surface(ridgeField, mask, false)));
+            // One column cache, not two. flatCache already keeps a value a column, and cache2d inside it
+            // was a second cache over the same key doing the same job.
+            DensityFunction top = DensityFunctions.flatCache(surface(ridgeField, mask, true));
+            DensityFunction bottom = DensityFunctions.flatCache(surface(ridgeField, mask, false));
 
             // Rock fades out going up from the layer centre, and again going down, each offset by how far
             // inland the column is. Taking the lesser of the two means a column is only solid where both
@@ -508,7 +510,29 @@ public final class SkyIslandDensity {
         // equally leaves the surface exactly where it was.
         // Interpolated across noise cells, the way the game interpolates its own terrain. Without this the
         // per-column caching below shows through as flat square steps rather than a smooth surface.
-        return DensityFunctions.interpolated(DensityFunctions.mul(combined, DensityFunctions.constant(SCALE)));
+        //
+        // The band gate sits inside the interpolation and not outside it, which is the whole trick. An
+        // interpolated function is filled by the chunk for every cell of the column whether or not
+        // anything ends up reading it, so gating from the outside saves nothing at all: the work is done
+        // before the gate is ever consulted. Inside, the cells above and below the islands still get
+        // filled, but filling them costs a height comparison and a constant instead of four layers of
+        // spline work and two noise lookups a block. Islands occupy about three hundred blocks of a
+        // thousand, so seven cells in ten now cost nothing.
+        DensityFunction band = DensityFunctions.rangeChoice(
+            DensityFunctions.yClampedGradient(
+                com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_MIN_Y,
+                com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_MIN_Y + com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_HEIGHT,
+                com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_MIN_Y,
+                com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_MIN_Y + com.barrenskies.worldgen.BarrenSkiesWorldgen.WORLD_HEIGHT
+            ),
+            bandBottom - reach * 2,
+            bandTop + reach * 2 + 1,
+            DensityFunctions.mul(combined, DensityFunctions.constant(SCALE)),
+            // Far enough below solid that taking the greater of this and the world's own density leaves
+            // the world's answer untouched.
+            DensityFunctions.constant(-64.0D)
+        );
+        return DensityFunctions.interpolated(band);
     }
 
     /**

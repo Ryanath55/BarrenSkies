@@ -340,7 +340,36 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             }
         });
 
+    /**
+     * Which world the caches hold, so leaving one does not leave its plans behind.
+     *
+     * <p>Both caches are bounded and neither grows without limit, but they sit on the worldgen thread pool
+     * and the pool outlives a world. Leave a save and join another and every one of those threads is still
+     * holding a few hundred courses from the first, each a list of a hundred and twenty nodes, for a world
+     * nobody is in any more. Bumping this on unload has each thread drop its own maps the next time it
+     * plans anything -- which is the only way to reach another thread's thread-local at all. A thread that
+     * never plans again keeps one world's worth, and that is the honest bound: not zero, but not growing.
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger EPOCH =
+        new java.util.concurrent.atomic.AtomicInteger();
+    private static final ThreadLocal<int[]> SEEN = ThreadLocal.withInitial(() -> new int[] { -1 });
+
+    public static void forget() {
+        EPOCH.incrementAndGet();
+    }
+
+    private static void freshen() {
+        int[] seen = SEEN.get();
+        int now = EPOCH.get();
+        if (seen[0] != now) {
+            seen[0] = now;
+            PLANS.get().clear();
+            DRAFTS.get().clear();
+        }
+    }
+
     private static Plan cached(FeaturePlaceContext<NoneFeatureConfiguration> context, int cellX, int cellZ) {
+        freshen();
         CellKey key = new CellKey(context.level().getSeed(), cellX, cellZ);
         return PLANS.get()
             .computeIfAbsent(key, k -> Optional.ofNullable(settled(context, k)))

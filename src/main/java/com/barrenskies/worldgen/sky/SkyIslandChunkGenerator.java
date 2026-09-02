@@ -82,20 +82,54 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         // A height well inside the barren pool, used to report what the ground below is.
         int groundQuartY = net.minecraft.core.QuartPos.fromBlock(floor - 96);
 
+        // Both of the answers this needs are properties of a column, and it is asked for every height in
+        // one: a chunk is four quarts across, four deep, and at this world height a hundred and ninety two
+        // tall, so each of the sixteen columns was being asked the same two questions a hundred and ninety
+        // two times over. Whether an island claims the column is four noise lookups, and what lies on the
+        // ground below is a climate sample and a search of the biome tree. Worked out once a column and
+        // kept, which is three thousand of each per chunk down to sixteen.
+        int baseQuartX = net.minecraft.core.QuartPos.fromBlock(chunk.getPos().getMinBlockX());
+        int baseQuartZ = net.minecraft.core.QuartPos.fromBlock(chunk.getPos().getMinBlockZ());
+        byte[] claimed = new byte[16];
+        @SuppressWarnings("unchecked")
+        Holder<net.minecraft.world.level.biome.Biome>[] ground = new Holder[16];
+
         net.minecraft.world.level.biome.BiomeResolver resolver = (quartX, quartY, quartZ, sampler) -> {
-            if (net.minecraft.core.QuartPos.toBlock(quartY) >= floor
-                && !SkyIslandDensity.hasIsland(
+            if (net.minecraft.core.QuartPos.toBlock(quartY) < floor) {
+                return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
+            }
+            int dx = quartX - baseQuartX;
+            int dz = quartZ - baseQuartZ;
+            boolean inChunk = dx >= 0 && dx < 4 && dz >= 0 && dz < 4;
+            int slot = inChunk ? dx * 4 + dz : -1;
+
+            boolean island;
+            if (slot >= 0 && claimed[slot] != 0) {
+                island = claimed[slot] > 0;
+            } else {
+                island = SkyIslandDensity.hasIsland(
                     islandNoise,
                     net.minecraft.core.QuartPos.toBlock(quartX),
                     net.minecraft.core.QuartPos.toBlock(quartZ),
                     layerCount,
                     threshold,
                     scale
-                )) {
-                // Open sky between islands reports the ground beneath rather than naming a biome for air.
+                );
+                if (slot >= 0) {
+                    claimed[slot] = (byte) (island ? 1 : -1);
+                }
+            }
+            if (island) {
+                return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
+            }
+            // Open sky between islands reports the ground beneath rather than naming a biome for air.
+            if (slot < 0) {
                 return this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
             }
-            return this.getBiomeSource().getNoiseBiome(quartX, quartY, quartZ, sampler);
+            if (ground[slot] == null) {
+                ground[slot] = this.getBiomeSource().getNoiseBiome(quartX, groundQuartY, quartZ, sampler);
+            }
+            return ground[slot];
         };
 
         return java.util.concurrent.CompletableFuture.supplyAsync(

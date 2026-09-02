@@ -37,7 +37,17 @@ public final class BarrenSkiesWorldgen {
      * type datapack entry, which is baked at build time.
      */
     public static final int WORLD_MIN_Y = -64;
-    public static final int WORLD_HEIGHT = 1024;
+    /**
+     * How tall the dimension is.
+     *
+     * <p>Sized to the islands and no larger. Everything the generator does, its own work and the ground
+     * world.s alike, is done for every cell of every column, and an interpolated density is filled for
+     * the whole height whether or not anything reads it -- so empty sky above the islands is paid for at
+     * the same rate as ground. The highest an island reaches is the top of its band plus twice the layer
+     * reach, which at the defaults is Y 644; this leaves sixty blocks over that and is the smallest
+     * multiple of sixteen that does. It was 1024, which bought three hundred blocks of nothing.
+     */
+    public static final int WORLD_HEIGHT = 768;
 
     public static final ResourceKey<DimensionType> DIMENSION_TYPE = ResourceKey.create(Registries.DIMENSION_TYPE, id("barren_skies"));
     public static final ResourceKey<NoiseGeneratorSettings> NOISE_SETTINGS = ResourceKey.create(Registries.NOISE_SETTINGS, id("barren_skies"));

@@ -63,6 +63,11 @@ neoForge {
             server()
             programArgument '--nogui'
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // Temporary, for the optimisation pass: -Pbench=N generates an N by N block of chunks away
+            // from spawn on startup and reports what it cost.
+            if (project.hasProperty('bench')) {
+                systemProperty 'barrenskies.bench', project.property('bench')
+            }
         }
         // This run config launches GameTestServer and runs all registered gametests, then exits.
         // By default, the server will crash when no gametests are provided.
