@@ -681,7 +681,7 @@ var DEFAULTS = {
   cavesOn: false, caveOct: -8, caveAmp: [1, 1],
 
   streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 20,
-  streamRim: 0.08, streamFollow: 0.3, streamWaver: 0.20, streamWidth: 1, streamStall: 6, streamLean: 0.45,
+  streamRim: 0.08, streamFollow: 0.3, streamWaver: 0.20, streamWidth: 1, streamStall: 12,
   streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamDryLip: 2,
   streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
@@ -939,12 +939,11 @@ function brink(x, z, layer) {
 /**
  * Walks inland and uphill from a mouth and hands the course back head first.
  *
- * Two things decide where it goes. Ahead, the gentlest way up rather than the steepest: standing in a
- * trough, up the valley is the shallowest climb there is and both walls are steep, while the steepest
- * takes the spine between two valleys and reversed that is a stream running down a ridge crest. And
- * sideways, a lean into whichever flank is lower, because a valley is a low across the line of travel
- * and nothing comparing only directions ahead can find one -- measured without it the course ran about
- * a third of a block above the ground either side of it, which is a face and not a bottom.
+ * Steered by the island mask, which is the one signal here that means a single thing: it rises towards
+ * the middle from every direction. Height was tried both ways and both fail. The steepest climb takes
+ * the ridge between two valleys. The gentlest takes the line that contours along a slope without
+ * climbing, and since the whole outside of an island is a slope, that is the rim -- the course sat a few
+ * blocks inside the edge from end to end, pouring over the side the whole way.
  */
 function ascend(outX, outZ, layer, bearing, lane) {
   var px = outX, pz = outZ, angle = bearing + Math.PI;
@@ -957,14 +956,17 @@ function ascend(outX, outZ, layer, bearing, lane) {
     if (top === null) break;
     nodes.push({ x: px, z: pz, angle: angle + Math.PI, h: top });
 
-    var here = topoY(px, pz, layer);
-    var bestTurn = 0, gentlest = Infinity;
+    // Inland, by the mask, and nothing else. Which way is up is the wrong question to steer by and both
+    // answers to it fail: the steepest climb takes the ridge between two valleys, and the gentlest -- on
+    // any even slope, which is what the whole outside of an island is -- takes the line that contours
+    // along it without climbing at all, and from a rim contouring is following the rim.
+    var inland = g.mask, bestTurn = 0, furthest = inland;
     for (var k = 0; k < FAN.length; k++) {
       var t = FAN[k];
-      var y = topoY(px + Math.sin(angle + t) * FAN_REACH, pz + Math.cos(angle + t) * FAN_REACH, layer);
-      if (y > here && y < gentlest) { gentlest = y; bestTurn = t; }
+      var m = groundAt(px + Math.sin(angle + t) * FAN_REACH, pz + Math.cos(angle + t) * FAN_REACH, layer).mask;
+      if (m > furthest) { furthest = m; bestTurn = t; }
     }
-    if (gentlest === Infinity) {
+    if (furthest <= inland) {
       if (++stalled >= S.streamStall) break;
     } else {
       stalled = 0;
@@ -975,14 +977,6 @@ function ascend(outX, outZ, layer, bearing, lane) {
     px += Math.sin(angle + wobble);
     pz += Math.cos(angle + wobble);
 
-    var sideX = Math.cos(angle), sideZ = -Math.sin(angle);
-    var left = topoY(px + sideX * 3, pz + sideZ * 3, layer);
-    var right = topoY(px - sideX * 3, pz - sideZ * 3, layer);
-    if (isFinite(left) && isFinite(right) && left !== right) {
-      var lean = left < right ? S.streamLean : -S.streamLean;
-      px += sideX * lean;
-      pz += sideZ * lean;
-    }
   }
   if (nodes.length - 1 < S.streamMinRun) return null;
   nodes.reverse();
@@ -1441,7 +1435,7 @@ function buildGrid(fast) {
              S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash,
              S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
              S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
-             S.streamRim, S.streamFollow, S.streamWaver, S.streamWidth, S.streamStall, S.streamLean,
+             S.streamRim, S.streamFollow, S.streamWaver, S.streamWidth, S.streamStall,
              S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamDryLip].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
@@ -1853,7 +1847,7 @@ var GROUPS = [
   },
   {
     num: "07", title: "Streams", open: true,
-    blurb: "A channel planned from its mouth backwards. Outlets are scattered, the ones that land on a rim are carried out to where the rock really stops, and the course is then walked inland and uphill from there and handed back the other way round. Uphill means the gentlest climb, not the steepest, and a lean into whichever flank is lower — the first keeps it out of ridges, the second puts it in the bottom of valleys. The bed can never rise, so nothing runs upstream.",
+    blurb: "A channel planned from its mouth backwards. Outlets are scattered, the ones landing on a rim are carried out to where the rock really stops, and the course is walked inland from there and handed back the other way round. Inland is judged by the island mask and not by height: the steepest climb takes ridges, and the gentlest contours along slopes, which on the outside of an island means following the rim. The bed can never rise, so nothing runs upstream.",
     items: [
       { type: "toggle", k: "streamsOn", label: "Island streams",
         note: "The mod also requires open sea below the mouth, which this cannot know — the ground world is Terralith's. Expect the game to show fewer than this does." },
@@ -1866,12 +1860,10 @@ var GROUPS = [
         note: "The climb stops here whether or not it has reached a top. Half of all courses hit it, so this is most of what sets how long they are." },
       { k: "streamMinRun", label: "Shortest run", min: 4, max: 80, step: 2, dp: 0,
         note: "Below this it is a notch in a rim rather than a stream, and the plan is dropped." },
-      { k: "streamStall", label: "Patience at the top", min: 1, max: 20, step: 1, dp: 0,
-        note: "Steps the climb may find nothing above it before it calls that the head. Small and it stops at the first flat spot; large and it wanders across a level deck looking for more." },
-      { k: "streamFollow", label: "Follows the valley", min: 0, max: 1, step: 0.05, dp: 2,
-        note: "How much of the turn towards the gentlest climb it takes each time. The gentlest and not the steepest: from a trough, up the valley is the shallowest way up there is, while the steepest takes the ridge between two of them." },
-      { k: "streamLean", label: "Settles into the low", min: 0, max: 1, step: 0.05, dp: 2,
-        note: "How far it slides sideways into the lower flank each step. This is the only part of the walk that looks across itself, and without it the course runs along the face of a slope rather than the bottom of it — measured, about a third of a block above the ground either side." },
+      { k: "streamStall", label: "Patience at the head", min: 1, max: 20, step: 1, dp: 0,
+        note: "Steps with nothing further inland than here before that is called the head. Small and it stops at the first bump in the mask; large and it pushes on across a plateau looking for more." },
+      { k: "streamFollow", label: "Heads inland", min: 0, max: 1, step: 0.05, dp: 2,
+        note: "How much of the turn towards the ground furthest inland it takes each time it steers. Judged on the island mask, which rises towards the middle from every direction — height cannot be used for this, since the gentlest way up a slope is the line that contours along it and that is the rim." },
       { k: "streamWaver", label: "Waver", min: 0, max: 0.8, step: 0.02, dp: 2,
         note: "Radians a single step may be thrown off course. Applied to the step and not kept: added into the heading it accumulates, and a noise slower than the run is then a long steady curve rather than a waver." },
       { k: "streamWidth", label: "Width at the mouth", min: 0, max: 5, step: 1, dp: 0,
@@ -2074,7 +2066,7 @@ function writeOut() {
     streams: { enabled: S.streamsOn, chance: S.streamChance, cell: S.streamCell,
                longestRun: S.streamLength, shortestRun: S.streamMinRun,
                mouthNearEdge: round(S.streamRim, 3), patienceAtTop: S.streamStall,
-               followsValley: round(S.streamFollow, 3), settlesIntoLow: round(S.streamLean, 3),
+               headsInland: round(S.streamFollow, 3),
                waver: round(S.streamWaver, 3),
                widthAtMouth: S.streamWidth, depthAtMouth: S.streamDepth,
                leastFallPerBlock: round(S.streamSlope, 3), deepestCut: S.streamMaxCut,

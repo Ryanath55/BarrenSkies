@@ -290,10 +290,52 @@ public final class SkyIslandDensity {
      * is why anything reading this should leave itself that much room.
      */
     public static double density(Field field, double x, double y, double z) {
+        return density(field, columnOf(field, x, z), x, y, z);
+    }
+
+    /**
+     * Everything about a column that does not change going down it.
+     *
+     * <p>Which is most of the work. A ridge lookup and one island lookup per layer, and then two splines
+     * each, none of which vary with height -- and a scan down a column asked for all of them again at
+     * every block. Read once and the same scan costs a detail lookup and a landform lookup a block, and
+     * nothing else.
+     *
+     * @param top where the deck stands, in density units, per layer; NaN where a layer has no ground here
+     * @param bottom where the underside sits, likewise
+     */
+    public record Column(double[] top, double[] bottom) {
+    }
+
+    public static Column columnOf(Field field, double x, double z) {
         double ridge = field.ridges().getValue(x, 0.0D, z);
-        double best = Double.NEGATIVE_INFINITY;
+        double[] top = new double[field.layerCount()];
+        double[] bottom = new double[field.layerCount()];
         for (int i = 0; i < field.layerCount(); i++) {
-            double value = layerAt(field, field.mask(x, z, i), ridge, i, y);
+            double mask = field.mask(x, z, i);
+            if (mask <= 0.0D) {
+                top[i] = Double.NaN;
+                continue;
+            }
+            Shape shape = new Shape(mask, ridge);
+            top[i] = DECK_SHAPE.apply(shape);
+            bottom[i] = BOWL_SHAPE.apply(shape);
+        }
+        return new Column(top, bottom);
+    }
+
+    public static double density(Field field, Column column, double x, double y, double z) {
+        int reach = field.reach();
+        double best = Double.NEGATIVE_INFINITY;
+        for (int i = 0; i < column.top().length; i++) {
+            if (Double.isNaN(column.top()[i])) {
+                continue;
+            }
+            double dy = (y - field.centre(i)) / reach;
+            double value = Math.min(
+                column.top()[i] - clamp(dy, 0.0D, 2.0D),
+                column.bottom()[i] + clamp(dy, -2.0D, 0.0D)
+            );
             if (value > best) {
                 best = value;
             }

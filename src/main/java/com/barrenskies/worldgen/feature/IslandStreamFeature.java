@@ -35,8 +35,8 @@ import net.minecraft.world.level.material.Fluids;
  * has got there. Measured on the version that did: eight hundred and sixty two courses walked in full, and
  * a hundred and seventy of the completed ones thrown away over the sea test alone. From the mouth, that
  * test is the first thing asked and costs one sample, reaching an edge is where the walk begins rather than
- * something to hope for, and running out of length stops being a failure at all, since uphill from a rim is
- * inland. The same square of world went from forty three streams to a hundred and seventy six.
+ * something to hope for, and running out of length stops being a failure at all, since away from a rim is
+ * inland. The same square of world went from forty three streams to five hundred and ten.
  *
  * <p>Every quantity that matters -- how far along, how deep, how wide, what elevation the water sits at --
  * is a property of distance travelled, which is why this is a path and not a noise field. A contour of a
@@ -51,8 +51,8 @@ import net.minecraft.world.level.material.Fluids;
  * <p>All the planning runs on noise -- the same density the generator builds, evaluated as arithmetic --
  * and none of it on the generated world. That is what keeps it inside one chunk. The whole path is known
  * to every chunk it crosses, so each one writes only the blocks that fall within itself and none outside.
- * Reading across chunks during decoration is fine and writing across it is not, which is the distinction an earlier version
- * got wrong, and it is what left trees floating over ground that had been cut away.
+ * Reading across chunks during decoration is fine and writing across it is not, which is the distinction
+ * an earlier version got wrong, and it is what left trees floating over ground that had been cut away.
  */
 public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** Grid the stream heads are hashed over. Roughly one candidate per island. */
@@ -80,18 +80,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int RIM_REACH = 28;
 
     /**
-     * How the channel is steered: a fan of candidate headings, none further off the current one than this,
-     * and the lowest ground wins.
+     * How the course is steered: a fan of candidate headings, none further off the current one than this,
+     * and the one furthest inland wins.
      *
-     * <p>A gradient would say the same thing in principle and much less in practice. The deck is flat in
-     * bands, so over most of an island the local gradient is exactly zero and answers nothing at all, while
-     * a probe eight blocks out still finds the cliff.
+     * <p>Inland by the mask, which is the only signal here that means one thing. Steering by height was
+     * tried both ways and both fail: the steepest climb takes the ridge between two valleys, and the
+     * gentlest takes the line that contours along a slope without climbing, which on the outside of an
+     * island is the rim itself. A lean sideways into the lower flank was tried on top of that to find
+     * valley floors, and once the steering stopped chasing height it moved the measured result by two
+     * hundredths of a block, so it was taken out again.
      */
     private static final double[] FAN = { -0.62D, -0.31D, 0.0D, 0.31D, 0.62D };
     private static final int FAN_REACH = 8;
     private static final int STEER_EVERY = 2;
 
-    /** How much of the turn towards the lowest ground it actually takes each time it steers. */
+    /** How much of the turn towards the ground furthest inland it takes each time it steers. */
     private static final double FOLLOW = 0.30D;
 
     /**
@@ -103,14 +106,8 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static final double WAVER = 0.20D;
 
-    /** Steps the climb may find nothing above it before the head is called found. */
-    private static final int STALL = 6;
-
-    /** How far to either side the flanks are read when the course settles into the low between them. */
-    private static final double TROUGH_PROBE = 3.0D;
-
-    /** And how far it may slide that way in one step. */
-    private static final double TROUGH_LEAN = 0.45D;
+    /** Steps with nothing further in than here before that is called the head. */
+    private static final int STALL = 12;
 
     /** Half width in blocks at the drop, tapering to nothing at the head. */
     private static final int HALF_WIDTH = 1;
@@ -188,6 +185,9 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * runs past one, so this is about twice the nominal for the two of them together.
      */
     private static final int SLACK = 16;
+
+    /** And how far either side of the last answer it looks before falling back to that wide window. */
+    private static final int NEAR = 4;
 
     /**
      * How close two streams may come before the later of them is dropped.
@@ -423,15 +423,35 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             return at(x, z, layer).surfaceY();
         }
 
-        /** Where the rock actually stops in a column, or MIN_VALUE if this layer has none here. */
         int trueSurface(double x, double z, int layer) {
+            return trueSurface(x, z, layer, Integer.MIN_VALUE);
+        }
+
+        /**
+         * Where the rock actually stops in a column, or MIN_VALUE if this layer has none here.
+         *
+         * <p>Given where the answer was a block ago, it looks there first. Consecutive steps are one block
+         * apart and a surface does not move far in one block, so the near window almost always has it, and
+         * the wide one -- sixteen either side of the height field, thirty three probes -- is only paid for
+         * when the ground really did jump. This is the cost of the whole feature: every other lookup put
+         * together is a fraction of the column scan, and the scan was being done from scratch every step.
+         */
+        int trueSurface(double x, double z, int layer, int hint) {
             SkyIslandDensity.Ground ground = at(x, z, layer);
             if (!ground.hasGround()) {
                 return Integer.MIN_VALUE;
             }
+            SkyIslandDensity.Column column = SkyIslandDensity.columnOf(this.field, x, z);
+            if (hint != Integer.MIN_VALUE) {
+                for (int y = hint + NEAR; y >= hint - NEAR; y--) {
+                    if (SkyIslandDensity.density(this.field, column, x, y, z) > 0.0D) {
+                        return y;
+                    }
+                }
+            }
             int middle = (int) Math.round(ground.surfaceY());
             for (int y = middle + SLACK; y >= middle - SLACK; y--) {
-                if (solid(x, y, z)) {
+                if (SkyIslandDensity.density(this.field, column, x, y, z) > 0.0D) {
                     return y;
                 }
             }
@@ -581,38 +601,47 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         double angle = bearing + Math.PI;
         List<Node> nodes = new ArrayList<>(LENGTH + 1);
         int stalled = 0;
+        int lastTop = Integer.MIN_VALUE;
 
         for (int step = 0; step <= LENGTH; step++) {
             SkyIslandDensity.Ground ground = terrain.at(px, pz, layer);
             if (ground.covered()) {
                 break;
             }
-            int top = terrain.trueSurface(px, pz, layer);
+            int top = terrain.trueSurface(px, pz, layer, lastTop);
             if (top == Integer.MIN_VALUE) {
                 break;
             }
+            lastTop = top;
             // The heading recorded is the one the water runs on, which is back down the way this came up.
             nodes.add(new Node(px, pz, angle + Math.PI, top, 0));
 
-            double here = terrain.heightAt(px, pz, layer);
+            // Inland, by the mask, and nothing else. Which way is up is the wrong question to steer by
+            // and both answers to it fail: the steepest climb takes the ridge between two valleys, and
+            // the gentlest -- on any even slope, which is what the whole outside of an island is --
+            // takes the line that contours along it without climbing at all. From a rim, contouring is
+            // following the rim. Measured, the course sat at mask 0.046 for its whole length, which is
+            // to say a few blocks inside the edge from end to end, pouring over the side as it went.
+            //
+            // The mask has none of that trouble. It rises towards the middle of an island from every
+            // direction and has exactly one thing to say, which is where the inside is. Where the course
+            // sits across the valley is not this job at all -- that is the lean below, which is the only
+            // part that should be reading heights.
+            double inland = ground.mask();
             double bestTurn = 0.0D;
-            double gentlest = Double.POSITIVE_INFINITY;
+            double furthest = inland;
             for (double turn : FAN) {
-                double y = terrain.heightAt(
+                double m = terrain.at(
                     px + Math.sin(angle + turn) * FAN_REACH, pz + Math.cos(angle + turn) * FAN_REACH, layer
-                );
-                // The gentlest way up, not the steepest. Standing in a trough, up the valley is the
-                // shallowest climb there is and both walls are steep, so the gentlest keeps to the
-                // bottom of it. The steepest does the opposite: from a rim it takes the spine between
-                // two valleys, and reversed that is a stream running down a ridge crest, trenching
-                // through the high ground the whole way rather than lying in a low one.
-                if (y > here && y < gentlest) {
-                    gentlest = y;
+                ).mask();
+                if (m > furthest) {
+                    furthest = m;
                     bestTurn = turn;
                 }
             }
-            if (gentlest == Double.POSITIVE_INFINITY) {
-                // Nothing ahead climbs. This is the top, and the top is where a stream starts.
+            if (furthest <= inland) {
+                // No way on is further in than this. The middle of the island, near enough, and the
+                // place a stream starts.
                 if (++stalled >= STALL) {
                     break;
                 }
@@ -633,15 +662,6 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             // trough. Measured, the course was running about a third of a block above the ground either
             // side of it. This is the only part of the walk that looks across itself, and it is what puts
             // the channel in the bottom of something rather than across the face of it.
-            double sideX = Math.cos(angle);
-            double sideZ = -Math.sin(angle);
-            double left = terrain.heightAt(px + sideX * TROUGH_PROBE, pz + sideZ * TROUGH_PROBE, layer);
-            double right = terrain.heightAt(px - sideX * TROUGH_PROBE, pz - sideZ * TROUGH_PROBE, layer);
-            if (Double.isFinite(left) && Double.isFinite(right) && left != right) {
-                double lean = left < right ? TROUGH_LEAN : -TROUGH_LEAN;
-                px += sideX * lean;
-                pz += sideZ * lean;
-            }
         }
         if (nodes.size() - 1 < MIN_RUN) {
             return null;
