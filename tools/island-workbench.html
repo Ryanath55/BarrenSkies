@@ -678,11 +678,11 @@ var DEFAULTS = {
 
   t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
 
-  cavesOn: true, caveOct: -8, caveAmp: [1, 1],
+  cavesOn: false, caveOct: -8, caveAmp: [1, 1],
 
-  streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 12,
-  streamInland: 0.17, streamFollow: 0.3, streamWiggle: 0.015, streamWidth: 1,
-  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamCliff: 5, streamDryLip: 5,
+  streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 20,
+  streamRim: 0.08, streamFollow: 0.3, streamWaver: 0.20, streamWidth: 1, streamStall: 6, streamLean: 0.45,
+  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamDryLip: 2,
   streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
@@ -863,93 +863,164 @@ function islandStrength(x, z) {
   return best;
 }
 
-/* How the channel is steered: a fan of candidate headings, none of them more than this far off the one it
-   is already on, and the lowest ground wins. A gradient would say the same thing in principle and much
-   less in practice -- the deck is flat in bands, so over most of an island the local gradient is exactly
-   zero and answers nothing, while a probe eight blocks out still finds the cliff. */
-var STEER_FAN = [-0.62, -0.31, 0, 0.31, 0.62];
-var STEER_REACH = 8;
-var STEER_EVERY = 2;
+var BOWL_SP = null, bowlSpKey = "";
+function bowlCached() {
+  var key = [S.bowlOn, S.bowl, S.ridgeOn, S.bandInner, S.bandOuter, S.deckLow, S.deckHigh, S.deckOuter,
+             S.shoreAt, S.deckAt].join("|");
+  if (key !== bowlSpKey) { bowlSpKey = key; BOWL_SP = bowlSpline(); }
+  return BOWL_SP;
+}
+
+/* The column cache. trueSurfaceOf walks a column a block at a time and every one of those needs the
+   layer's top and bottom, which do not change down the column. */
+var COL_X = NaN, COL_Z = NaN, COL_KEY = "", COL = null;
+function columnAt(x, z) {
+  var key = noiseKey + "|" + deckSpKey + "|" + bowlSpKey + "|" + S.layers + "|" + S.bandBottom + "|" + S.bandTop;
+  if (x !== COL_X || z !== COL_Z || key !== COL_KEY) {
+    COL_X = x; COL_Z = z; COL_KEY = key;
+    COL = column(x, z, deckCached(), bowlCached());
+  }
+  return COL;
+}
+
+/** Whether the generator would put rock at a point, on one layer. Caves and 3D terms included. */
+function solidOn(x, z, layer, y) {
+  var cols = columnAt(x, z);
+  if (layer < 0 || layer >= cols.length) return false;
+  return solidAt(cols[layer], y, S.reach, x, z);
+}
 
 /**
- * Walks a channel downhill from a head until the island runs out under it.
+ * Where the rock actually stops in a column, or null if this layer has none here.
  *
- * Returns the centre line only. Width, depth and the elevation of the bed are worked out afterwards, by
- * profileChannel, because all three are measured against the length of the run and the run is not known
- * until the walk has finished. Null means it was still on the island at the longest run, which is not a
- * stream: water that never reaches an edge is a puddle.
+ * The height field says where a smooth surface would be; the detail and landform noise move it several
+ * blocks either way and the caves can take the top off it altogether. Only this answer may be measured
+ * against, which is the whole reason the mod stopped planning on the smooth one.
  */
-function descend(sx, sz, layer, lane) {
-  var px = sx + 0.5, pz = sz + 0.5;
-
-  // Which way is down at island scale. Asked once, at the head, where the local view is usually a level
-  // deck with no slope in it at all and the fall is fifty blocks away.
-  var angle = 0, lowest = Infinity;
-  for (var s = 0; s < 12; s++) {
-    var a = s / 12 * Math.PI * 2;
-    var y = topoY(px + Math.sin(a) * 24, pz + Math.cos(a) * 24, layer);
-    if (y < lowest) { lowest = y; angle = a; }
-  }
-
-  var nodes = [];
-  var prevY = 0;
-  for (var step = 0; step <= S.streamLength; step++) {
-    var g = groundAt(px, pz, layer);
-    // Three ways for the run to be over. The island ending under it, which is the lip of the fall. The
-    // ground dropping faster than a channel could hold water on it, which stops a stream carving a
-    // staircase down a face it should pour over. And a second island standing over this column, where
-    // a channel would be a trench in the floor of a cave.
-    if (g.mask <= 0 || g.covered) return nodes;
-    if (step > 0 && g.y < prevY - S.streamCliff) return nodes;
-    prevY = g.y;
-    nodes.push({ x: px, z: pz, h: g.y, angle: angle });
-
-    if (step % STEER_EVERY === 0) {
-      var bestTurn = 0, bestY = Infinity;
-      for (var k = 0; k < STEER_FAN.length; k++) {
-        var t = STEER_FAN[k];
-        var y2 = topoY(px + Math.sin(angle + t) * STEER_REACH, pz + Math.cos(angle + t) * STEER_REACH, layer);
-        if (y2 < bestY) { bestY = y2; bestTurn = t; }
-      }
-      angle += bestTurn * S.streamFollow;
-    }
-    // A waver laid over the slope, not a course of its own.
-    angle += noises.stream.get(step * 0.28, lane, 0) * S.streamWiggle;
-    px += Math.sin(angle);
-    pz += Math.cos(angle);
+var SLACK = 16;
+function trueSurfaceOf(x, z, layer) {
+  var g = groundAt(x, z, layer);
+  if (g.y === -Infinity) return null;
+  var middle = Math.round(g.y);
+  for (var y = middle + SLACK; y >= middle - SLACK; y--) {
+    if (solidOn(x, z, layer, y)) return y;
   }
   return null;
 }
 
+/* =====================================================================
+   Streams, planned from the mouth
+
+   Scatter outlets, keep the ones on a rim, carry each out to where the rock really stops, then walk
+   inland and uphill and hand the course back the other way round. Which is not how the water runs, and
+   is exactly why it is done this way: a descent does not know where it comes out until it has got there,
+   so every cheap and decisive question about the mouth has to wait until the expensive part is over. From
+   this end, reaching an edge is where the walk begins rather than something to hope for, and running out
+   of length stops being a failure at all.
+
+   What the mod also asks and this cannot is whether there is open sea below the mouth. That depends on
+   the ground world's continentalness, which is Terralith's, so expect the game to show fewer than this.
+   ===================================================================== */
+
+var FAN = [-0.62, -0.31, 0, 0.31, 0.62];
+var FAN_REACH = 8;
+
+/** Which way the island falls away here, so a mouth can be carried out to the brink. */
+function brink(x, z, layer) {
+  var bearing = 0, lowest = Infinity;
+  for (var s = 0; s < 16; s++) {
+    var a = s / 16 * Math.PI * 2;
+    var y = topoY(x + Math.sin(a) * 12, z + Math.cos(a) * 12, layer);
+    if (y < lowest) { lowest = y; bearing = a; }
+  }
+  return bearing;
+}
+
 /**
- * Turns a centre line into a channel: how wide it is at each node, how deep it is cut, and the elevation
- * the water sits at there.
+ * Walks inland and uphill from a mouth and hands the course back head first.
  *
- * The bed is the part that matters. It is a running minimum, so it can never rise, whatever the ground
- * above it does, and that alone is what stops a stream reading as though it ran uphill. Where the ground
- * falls away the bed falls with it and the channel stays shallow, which is a cascade. Where the ground
- * climbs, the bed holds and the channel cuts deeper, which is a gorge -- until the cut is deeper than
- * water would plausibly have carved, at which point the plan is thrown away rather than trenched through.
+ * Two things decide where it goes. Ahead, the gentlest way up rather than the steepest: standing in a
+ * trough, up the valley is the shallowest climb there is and both walls are steep, while the steepest
+ * takes the spine between two valleys and reversed that is a stream running down a ridge crest. And
+ * sideways, a lean into whichever flank is lower, because a valley is a low across the line of travel
+ * and nothing comparing only directions ahead can find one -- measured without it the course ran about
+ * a third of a block above the ground either side of it, which is a face and not a bottom.
  */
-function profileChannel(nodes) {
+function ascend(outX, outZ, layer, bearing, lane) {
+  var px = outX, pz = outZ, angle = bearing + Math.PI;
+  var nodes = [], stalled = 0;
+
+  for (var step = 0; step <= S.streamLength; step++) {
+    var g = groundAt(px, pz, layer);
+    if (g.covered) break;
+    var top = trueSurfaceOf(px, pz, layer);
+    if (top === null) break;
+    nodes.push({ x: px, z: pz, angle: angle + Math.PI, h: top });
+
+    var here = topoY(px, pz, layer);
+    var bestTurn = 0, gentlest = Infinity;
+    for (var k = 0; k < FAN.length; k++) {
+      var t = FAN[k];
+      var y = topoY(px + Math.sin(angle + t) * FAN_REACH, pz + Math.cos(angle + t) * FAN_REACH, layer);
+      if (y > here && y < gentlest) { gentlest = y; bestTurn = t; }
+    }
+    if (gentlest === Infinity) {
+      if (++stalled >= S.streamStall) break;
+    } else {
+      stalled = 0;
+      angle += bestTurn * S.streamFollow;
+    }
+
+    var wobble = noises.stream.get(step * 0.28, lane, 0) * S.streamWaver;
+    px += Math.sin(angle + wobble);
+    pz += Math.cos(angle + wobble);
+
+    var sideX = Math.cos(angle), sideZ = -Math.sin(angle);
+    var left = topoY(px + sideX * 3, pz + sideZ * 3, layer);
+    var right = topoY(px - sideX * 3, pz - sideZ * 3, layer);
+    if (isFinite(left) && isFinite(right) && left !== right) {
+      var lean = left < right ? S.streamLean : -S.streamLean;
+      px += sideX * lean;
+      pz += sideZ * lean;
+    }
+  }
+  if (nodes.length - 1 < S.streamMinRun) return null;
+  nodes.reverse();
+  return nodes;
+}
+
+/** Whether a bed at this elevation has the rock under it to hold water. */
+function footed(node, layer, bed) {
+  var floor = Math.floor(bed);
+  for (var under = 1; under <= 2; under++) {
+    if (!solidOn(node.x, node.z, layer, floor - under)) return false;
+  }
+  return true;
+}
+
+/**
+ * Turns the centre line into a channel: how wide it is at each node, how deep, and where the water sits.
+ *
+ * The bed is a running minimum, so it can never rise whatever the ground above it does. Where there is no
+ * rock under it the bed drops to find some, which is allowed because deeper always is; a hollow too deep
+ * to reach the floor of is bridged by the carve rather than refused, since refusing threw away five plans
+ * in six -- caves live at exactly the depth a channel is cut to.
+ */
+function profileChannel(nodes, layer) {
   var run = nodes.length - 1;
   if (run < 1) return null;
   var bed = nodes[0].h - 2 + S.streamSlope;
   for (var k = 0; k <= run; k++) {
     var n = nodes[k];
     var along = k / run;
-    // Shallow and narrow at the head, deep and wide at the drop. Both are measured along the run, which
-    // is why this is a path and not a noise contour: a contour has no along, so it cannot taper.
     var want = 2 + (S.streamDepth - 2) * along;
     var previous = bed;
     bed = Math.min(bed - S.streamSlope, n.h - want);
-    // The least fall is not allowed to dig its own trench. Over a level deck it accumulates -- a hundred
-    // and forty blocks at four hundredths is five and a half of them -- and would take the cut past the
-    // cap on its own, throwing away a plan with nothing wrong with it. Held at the cap instead, which is
-    // still never rising, and never lifted above where the bed already was.
     bed = Math.max(bed, Math.min(previous, n.h - S.streamMaxCut));
-    // Past the cap even so, which now only happens where the ground itself climbed into the channel.
     if (n.h - bed > S.streamMaxCut) return null;
+    var lowest = n.h - S.streamMaxCut;
+    while (bed > lowest && !footed(n, layer, bed)) bed -= 1;
+    if (bed < lowest) bed = lowest;
     n.along = along;
     n.bed = bed;
     n.cut = n.h - bed;
@@ -958,47 +1029,44 @@ function profileChannel(nodes) {
   return nodes;
 }
 
-/** A head on the high ground of a cell, and the channel that runs down from it. */
+/** A mouth on a rim, and the course walked back up from it. */
 function planStream(cellX, cellZ) {
   var h = streamHash(cellX, cellZ);
   if (h % 100 >= S.streamChance) return null;
 
-  // The highest of a scatter of candidates, not the first one that happened to be inland. A stream has to
-  // start at the top or it has nowhere to go, and the decks differ by forty blocks between ridge bands,
-  // so which candidate is taken decides most of what the stream then does.
-  var sx = 0, sz = 0, layer = -1, bestY = -Infinity;
-  for (var attempt = 0; attempt < 12; attempt++) {
+  var mouths = [];
+  for (var attempt = 0; attempt < 64 && mouths.length < 4; attempt++) {
     var pick = streamHash(cellX * 31 + attempt, cellZ * 17 - attempt);
-    var cx = cellX * S.streamCell + (pick % S.streamCell);
-    var cz = cellZ * S.streamCell + ((pick >>> 9) % S.streamCell);
-    var g = groundAt(cx, cz, -1);
-    if (g.mask < S.streamInland || g.y === -Infinity) continue;
-    if (g.y > bestY) { bestY = g.y; sx = cx; sz = cz; layer = g.layer; }
+    var mx = cellX * S.streamCell + (pick % S.streamCell);
+    var mz = cellZ * S.streamCell + ((pick >>> 9) % S.streamCell);
+    var g = groundAt(mx, mz, -1);
+    if (g.y === -Infinity || g.covered || g.mask <= 0 || g.mask > S.streamRim) continue;
+    mouths.push([mx, mz, g.layer]);
   }
-  if (bestY === -Infinity) return null;
 
-  // Then uphill from there for as long as it keeps climbing, which moves the head onto the crest above
-  // the candidate instead of leaving it partway down whatever slope the candidate happened to land on.
-  for (var climb = 0; climb < 10; climb++) {
-    var stepped = false;
-    for (var s = 0; s < 8; s++) {
-      var a = s / 8 * Math.PI * 2;
-      var nx = Math.round(sx + Math.sin(a) * 5), nz = Math.round(sz + Math.cos(a) * 5);
-      var g2 = groundAt(nx, nz, layer);
-      if (g2.mask < S.streamInland) continue;
-      if (g2.y > bestY + 0.5) { bestY = g2.y; sx = nx; sz = nz; stepped = true; }
+  for (var m = 0; m < mouths.length; m++) {
+    var layer = mouths[m][2];
+    var outX = mouths[m][0], outZ = mouths[m][1];
+    var bearing = brink(outX, outZ, layer);
+    // Out to where the rock really stops, which is several blocks past where the mask says the island
+    // ends, and re-reading the fall line as it goes so a rim that curves away is followed not missed.
+    for (var step = 0; step < 28; step++) {
+      if (step % 4 === 0) bearing = brink(outX, outZ, layer);
+      var nx = outX + Math.sin(bearing), nz = outZ + Math.cos(bearing);
+      if (trueSurfaceOf(nx, nz, layer) === null) break;
+      outX = nx; outZ = nz;
     }
-    if (!stepped) break;
+    var line = ascend(outX, outZ, layer, bearing, (h >>> 5) % 4096);
+    if (!line) continue;
+    line = profileChannel(line, layer);
+    if (!line) continue;
+    return { sx: Math.floor(line[0].x), sz: Math.floor(line[0].z), layer: layer,
+             run: line.length - 1, nodes: line,
+             headY: line[0].bed, footY: line[line.length - 1].bed,
+             fall: line[0].bed - line[line.length - 1].bed };
   }
-
-  var lane = (h >>> 5) % 4096;
-  var nodes = profileChannel(descend(sx, sz, layer, lane) || []);
-  if (!nodes || nodes.length - 1 < S.streamMinRun) return null;
-  var last = nodes[nodes.length - 1];
-  return { sx: sx, sz: sz, layer: layer, lane: lane, run: nodes.length - 1, nodes: nodes,
-           headY: nodes[0].bed, footY: last.bed, fall: nodes[0].bed - last.bed };
+  return null;
 }
-
 /** Every column the channel touches, with the elevation its floor is cut to there. */
 /* How far a column centre is from a stretch of the centre line. */
 function segmentDistance(px, pz, a, b) {
@@ -1373,8 +1441,8 @@ function buildGrid(fast) {
              S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash,
              S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
              S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
-             S.streamInland, S.streamFollow, S.streamWiggle, S.streamWidth,
-             S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamCliff, S.streamDryLip].join("|");
+             S.streamRim, S.streamFollow, S.streamWaver, S.streamWidth, S.streamStall, S.streamLean,
+             S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamDryLip].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
@@ -1785,35 +1853,37 @@ var GROUPS = [
   },
   {
     num: "07", title: "Streams", open: true,
-    blurb: "A channel that starts on the high ground of a cell and runs downhill from there to an edge, deepening and widening as it goes. The head is found by taking the highest of a scatter of candidates and then climbing; the course is steered by probing ahead for the lowest ground, with a waver laid over the top. The bed can never rise, so nothing ever runs upstream.",
+    blurb: "A channel planned from its mouth backwards. Outlets are scattered, the ones that land on a rim are carried out to where the rock really stops, and the course is then walked inland and uphill from there and handed back the other way round. Uphill means the gentlest climb, not the steepest, and a lean into whichever flank is lower — the first keeps it out of ridges, the second puts it in the bottom of valleys. The bed can never rise, so nothing runs upstream.",
     items: [
       { type: "toggle", k: "streamsOn", label: "Island streams",
-        note: "The mod also requires open sea below the far end, which this cannot know — the ground world is Terralith's. Expect the game to show fewer than this does." },
+        note: "The mod also requires open sea below the mouth, which this cannot know — the ground world is Terralith's. Expect the game to show fewer than this does." },
       { k: "streamChance", label: "Cells with a stream (%)", min: 0, max: 100, step: 5, dp: 0 },
       { k: "streamCell", label: "Spacing between candidates", min: 64, max: 512, step: 16, dp: 0,
         note: "One candidate per square of this size. Near an island width gives about one stream per island." },
+      { k: "streamRim", label: "How near an edge a mouth is", min: 0.01, max: 0.4, step: 0.01, dp: 2,
+        note: "On the island mask, where zero is the edge. A mouth has to land inside this band to be taken, and is then carried out to the real rock edge from wherever it landed. Widen it and more outlets qualify, but from further in, so the walk out has further to go." },
       { k: "streamLength", label: "Longest run", min: 40, max: 320, step: 10, dp: 0,
-        note: "A stream that has not left the island by here is abandoned, so this has to be more than an island radius or nothing qualifies." },
+        note: "The climb stops here whether or not it has reached a top. Half of all courses hit it, so this is most of what sets how long they are." },
       { k: "streamMinRun", label: "Shortest run", min: 4, max: 80, step: 2, dp: 0,
-        note: "Below this it is a notch in a rim rather than a stream." },
-      { k: "streamInland", label: "How far inside it starts", min: 0, max: 0.5, step: 0.01, dp: 2,
-        note: "Measured on the island mask, where half of all island ground sits below 0.13. Raise it and heads move towards the middle, but fewer of them find an edge within the longest run." },
-      { k: "streamFollow", label: "Follows the slope", min: 0, max: 1, step: 0.05, dp: 2,
-        note: "How much of the turn towards the lowest ground ahead it actually takes each time it steers. At zero it ignores the terrain and runs straight; at one it turns as hard as it is allowed to and clings to every gully." },
-      { k: "streamWiggle", label: "Waver", min: 0, max: 0.2, step: 0.005, dp: 3,
-        note: "Noise added to the heading on top of the slope. Small — this is meant to keep the line from looking drawn, not to decide where it goes." },
-      { k: "streamWidth", label: "Width at the edge", min: 0, max: 5, step: 1, dp: 0,
+        note: "Below this it is a notch in a rim rather than a stream, and the plan is dropped." },
+      { k: "streamStall", label: "Patience at the top", min: 1, max: 20, step: 1, dp: 0,
+        note: "Steps the climb may find nothing above it before it calls that the head. Small and it stops at the first flat spot; large and it wanders across a level deck looking for more." },
+      { k: "streamFollow", label: "Follows the valley", min: 0, max: 1, step: 0.05, dp: 2,
+        note: "How much of the turn towards the gentlest climb it takes each time. The gentlest and not the steepest: from a trough, up the valley is the shallowest way up there is, while the steepest takes the ridge between two of them." },
+      { k: "streamLean", label: "Settles into the low", min: 0, max: 1, step: 0.05, dp: 2,
+        note: "How far it slides sideways into the lower flank each step. This is the only part of the walk that looks across itself, and without it the course runs along the face of a slope rather than the bottom of it — measured, about a third of a block above the ground either side." },
+      { k: "streamWaver", label: "Waver", min: 0, max: 0.8, step: 0.02, dp: 2,
+        note: "Radians a single step may be thrown off course. Applied to the step and not kept: added into the heading it accumulates, and a noise slower than the run is then a long steady curve rather than a waver." },
+      { k: "streamWidth", label: "Width at the mouth", min: 0, max: 5, step: 1, dp: 0,
         note: "Half width in blocks at the drop, tapering to nothing at the head." },
-      { k: "streamDepth", label: "Depth at the edge", min: 2, max: 12, step: 1, dp: 0,
+      { k: "streamDepth", label: "Depth at the mouth", min: 2, max: 12, step: 1, dp: 0,
         note: "How far below the ground the bed sits by the time it goes over. It starts at two and reaches this." },
       { k: "streamSlope", label: "Least fall per block", min: 0, max: 0.4, step: 0.01, dp: 2,
-        note: "The bed drops at least this much every block even where the ground is level, which is what keeps water moving across a deck. Over level ground alone it is this times the run." },
+        note: "The bed drops at least this much every block even where the ground is level, which is what keeps water moving across a deck." },
       { k: "streamMaxCut", label: "Deepest cut", min: 4, max: 40, step: 1, dp: 0,
-        note: "Where the ground climbs, the bed holds and the channel deepens instead. Past this the plan is abandoned rather than trenched through, so lowering it throws away streams that would have to cut a gorge." },
+        note: "Where the ground climbs, the bed holds and the channel deepens instead. It is also how far the bed may drop looking for rock under a hollow before the carve simply lays it a floor." },
       { k: "streamDryLip", label: "Dry lip", min: 0, max: 12, step: 1, dp: 0,
-        note: "Blocks before the drop that are cut but given no source, so what goes over the edge is water already flowing rather than a still block sitting on the brink. Flow only reaches seven blocks over level ground, so a long lip risks a dry channel where it shows most." },
-      { k: "streamCliff", label: "Steepest fall it follows", min: 2, max: 30, step: 1, dp: 0,
-        note: "Ground that drops faster than this in a block is the lip of a fall, and the channel stops there rather than chasing it down. It is also what keeps a stream from carrying on across a second island sixty blocks below the one it started on." },
+        note: "Blocks before the drop that are cut but given no source, so what goes over the edge is water already flowing rather than a still block on the brink. Flow reaches seven blocks over level ground, so a long lip risks a dry channel where it shows most." },
       { k: "streamOct", label: "Waver noise octave", min: -10, max: -4, step: 1, dp: 0 }
     ]
   },
@@ -2003,12 +2073,12 @@ function writeOut() {
     detail: { enabled: S.detailOn, strength: round(S.detailStrength, 4), firstOctave: S.detailOct, amplitudes: S.detailAmp },
     streams: { enabled: S.streamsOn, chance: S.streamChance, cell: S.streamCell,
                longestRun: S.streamLength, shortestRun: S.streamMinRun,
-               startsInsideMask: round(S.streamInland, 3),
-               followsSlope: round(S.streamFollow, 3), waver: round(S.streamWiggle, 4),
-               widthAtEdge: S.streamWidth, depthAtEdge: S.streamDepth,
+               mouthNearEdge: round(S.streamRim, 3), patienceAtTop: S.streamStall,
+               followsValley: round(S.streamFollow, 3), settlesIntoLow: round(S.streamLean, 3),
+               waver: round(S.streamWaver, 3),
+               widthAtMouth: S.streamWidth, depthAtMouth: S.streamDepth,
                leastFallPerBlock: round(S.streamSlope, 3), deepestCut: S.streamMaxCut,
-               steepestFallFollowed: S.streamCliff, dryLip: S.streamDryLip,
-               waverOctave: S.streamOct,
+               dryLip: S.streamDryLip, waverOctave: S.streamOct,
                visibleHere: lastStreams, medianRun: lastStreamRun, medianFall: lastStreamFall },
     landformNoise: { enabled: S.t3On, strength: round(S.t3Strength, 4), firstOctave: S.t3Oct,
                      verticalSquash: round(S.t3Squash, 3),
@@ -2163,7 +2233,8 @@ window.__bs = {
   deckSpline: deckSpline, bowlSpline: bowlSpline, column: column, density: density,
   extra3d: extra3d, layerValue: layerValue, solidAt: solidAt,
   streamsNear: streamsNear, streamPath: streamPath, planStream: planStream, islandStrength: islandStrength,
-  groundAt: groundAt, topoY: topoY, descend: descend, profileChannel: profileChannel,
+  groundAt: groundAt, topoY: topoY, trueSurfaceOf: trueSurfaceOf, solidOn: solidOn,
+  ascend: ascend, brink: brink, profileChannel: profileChannel,
   // Synchronous. request() only schedules a frame, so anything measuring a noise it just changed
   // has to rebuild here first or it reads the previous one.
   buildNoises: buildNoises, noiseOf: function () { return noises; },

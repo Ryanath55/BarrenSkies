@@ -136,10 +136,11 @@ public final class BarrenSkiesConfig {
                 "Cut where a three dimensional noise passes through zero, which traces a connected tunnel",
                 "network rather than isolated pockets. Carvers cannot do this: the vanilla cave carver is",
                 "limited to ground altitude and never reaches an island.",
-                "On a thin island a tunnel can break through to open sky, leaving arches and windows."
+                "On a thin island a tunnel can break through to open sky, leaving arches and windows.",
+                "Off by default while the carver is being reworked: what it cuts at present is not liked."
             )
             .translation("barrenskies.configuration.islandCaves")
-            .define("islandCaves", true);
+            .define("islandCaves", false);
 
         ISLAND_WATERFALLS = b
             .comment(
@@ -181,7 +182,7 @@ public final class BarrenSkiesConfig {
                 "Turn it off if your world has too few."
             )
             .translation("barrenskies.configuration.waterfallsOnlyOverWater")
-            .define("waterfallsOnlyOverWater", true);
+            .define("waterfallsOnlyOverWater", false);
 
         ISLAND_WATER = b
             .comment(

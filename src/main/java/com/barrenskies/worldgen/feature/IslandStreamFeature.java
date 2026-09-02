@@ -50,8 +50,8 @@ import net.minecraft.world.level.material.Fluids;
  *
  * <p>All the planning runs on noise -- the same density the generator builds, evaluated as arithmetic --
  * and none of it on the generated world. That is what keeps it inside one chunk. The whole path is known
- * to every chunk it crosses, so each one writes only the blocks that fall within itself and none outside. Reading across
- * chunks during decoration is fine and writing across it is not, which is the distinction an earlier version
+ * to every chunk it crosses, so each one writes only the blocks that fall within itself and none outside.
+ * Reading across chunks during decoration is fine and writing across it is not, which is the distinction an earlier version
  * got wrong, and it is what left trees floating over ground that had been cut away.
  */
 public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
@@ -62,7 +62,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static final int LENGTH = 120;
 
     /** Shorter than this is a notch in a rim, not a stream, so those plans are dropped. */
-    private static final int MIN_RUN = 12;
+    private static final int MIN_RUN = 20;
 
     /** Air needed above a surface before it counts as open ground rather than the roof of a cave. */
     private static final int OPEN_SKY = 6;
@@ -94,8 +94,23 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** How much of the turn towards the lowest ground it actually takes each time it steers. */
     private static final double FOLLOW = 0.30D;
 
-    /** Noise added to the heading on top of the slope. Small: a waver, not a course of its own. */
-    private static final double WIGGLE = 0.015D;
+    /**
+     * How far the waver may throw a single step off the course, in radians.
+     *
+     * <p>Applied to the step and not kept. Added into the heading, as it was, it accumulated: a noise with
+     * a wavelength longer than the whole run, integrated a hundred and twenty times, is not a waver but a
+     * slow steady turn away from whatever the walk was following. About a tenth of a turn either way.
+     */
+    private static final double WAVER = 0.20D;
+
+    /** Steps the climb may find nothing above it before the head is called found. */
+    private static final int STALL = 6;
+
+    /** How far to either side the flanks are read when the course settles into the low between them. */
+    private static final double TROUGH_PROBE = 3.0D;
+
+    /** And how far it may slide that way in one step. */
+    private static final double TROUGH_LEAN = 0.45D;
 
     /** Half width in blocks at the drop, tapering to nothing at the head. */
     private static final int HALF_WIDTH = 1;
@@ -263,7 +278,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     /** A stream known to start on high ground and to reach an edge, worked out before anything is cut. */
-    private record Plan(int startX, int startZ, int layer, List<Node> nodes) {
+    private record Plan(int startX, int startZ, int layer, List<Node> nodes,
+                        double minX, double maxX, double minZ, double maxZ) {
+        static Plan of(int startX, int startZ, int layer, List<Node> nodes) {
+            double minX = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double minZ = Double.POSITIVE_INFINITY;
+            double maxZ = Double.NEGATIVE_INFINITY;
+            for (Node node : nodes) {
+                minX = Math.min(minX, node.x());
+                maxX = Math.max(maxX, node.x());
+                minZ = Math.min(minZ, node.z());
+                maxZ = Math.max(maxZ, node.z());
+            }
+            return new Plan(startX, startZ, layer, nodes, minX, maxX, minZ, maxZ);
+        }
     }
 
     private record CellKey(long seed, int x, int z) {
@@ -344,8 +373,20 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         return mine;
     }
 
+    /** Whether the two courses are far enough apart that no pair of their nodes could be close. */
+    private static boolean apart(Plan mine, Plan other) {
+        return mine.minX() - other.maxX() > SEPARATION || other.minX() - mine.maxX() > SEPARATION
+            || mine.minZ() - other.maxZ() > SEPARATION || other.minZ() - mine.maxZ() > SEPARATION;
+    }
+
     /** Whether two channels ever come within a channel's width and then some of each other. */
     private static boolean crosses(Plan mine, Plan other) {
+        // The boxes first, since almost every pair asked about is two streams on different islands that
+        // never come near. Worth little: measured, it moved a survey of two thousand cells from 8.4
+        // seconds to 8.1, so the cost of planning is the walking and not this.
+        if (apart(mine, other)) {
+            return false;
+        }
         for (Node node : mine.nodes()) {
             for (Node theirs : other.nodes()) {
                 double dx = node.x() - theirs.x();
@@ -494,12 +535,11 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 continue;
             }
 
-            int wanted = MIN_RUN + (int) Math.floorMod(mix(hash >> 8), LENGTH - MIN_RUN + 1L);
-            List<Node> line = ascend(terrain, outX, outZ, layer, bearing, Math.floorMod(hash >> 12, 4096L), wanted);
+            List<Node> line = ascend(terrain, outX, outZ, layer, bearing, Math.floorMod(hash >> 12, 4096L));
             if (line == null || line.size() - 1 < MIN_RUN || !profile(terrain, line, layer)) {
                 continue;
             }
-            return new Plan((int) Math.floor(line.getFirst().x()), (int) Math.floor(line.getFirst().z()), layer, line);
+            return Plan.of((int) Math.floor(line.getFirst().x()), (int) Math.floor(line.getFirst().z()), layer, line);
         }
         return null;
     }
@@ -533,15 +573,16 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * <p>Null only where the mouth turned out not to be on open ground at all.
      */
     private static List<Node> ascend(
-        Terrain terrain, double outX, double outZ, int layer, double bearing, long lane, int wanted
+        Terrain terrain, double outX, double outZ, int layer, double bearing, long lane
     ) {
         double px = outX;
         double pz = outZ;
         // Inland is back the way the ground fell away.
         double angle = bearing + Math.PI;
-        List<Node> nodes = new ArrayList<>(wanted + 1);
+        List<Node> nodes = new ArrayList<>(LENGTH + 1);
+        int stalled = 0;
 
-        for (int step = 0; step <= wanted; step++) {
+        for (int step = 0; step <= LENGTH; step++) {
             SkyIslandDensity.Ground ground = terrain.at(px, pz, layer);
             if (ground.covered()) {
                 break;
@@ -550,27 +591,59 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             if (top == Integer.MIN_VALUE) {
                 break;
             }
+            // The heading recorded is the one the water runs on, which is back down the way this came up.
             nodes.add(new Node(px, pz, angle + Math.PI, top, 0));
 
-            if (step % STEER_EVERY == 0) {
-                double bestTurn = 0.0D;
-                double bestY = Double.NEGATIVE_INFINITY;
-                for (double turn : FAN) {
-                    double y = terrain.heightAt(
-                        px + Math.sin(angle + turn) * FAN_REACH, pz + Math.cos(angle + turn) * FAN_REACH, layer
-                    );
-                    if (y > bestY) {
-                        bestY = y;
-                        bestTurn = turn;
-                    }
+            double here = terrain.heightAt(px, pz, layer);
+            double bestTurn = 0.0D;
+            double gentlest = Double.POSITIVE_INFINITY;
+            for (double turn : FAN) {
+                double y = terrain.heightAt(
+                    px + Math.sin(angle + turn) * FAN_REACH, pz + Math.cos(angle + turn) * FAN_REACH, layer
+                );
+                // The gentlest way up, not the steepest. Standing in a trough, up the valley is the
+                // shallowest climb there is and both walls are steep, so the gentlest keeps to the
+                // bottom of it. The steepest does the opposite: from a rim it takes the spine between
+                // two valleys, and reversed that is a stream running down a ridge crest, trenching
+                // through the high ground the whole way rather than lying in a low one.
+                if (y > here && y < gentlest) {
+                    gentlest = y;
+                    bestTurn = turn;
                 }
+            }
+            if (gentlest == Double.POSITIVE_INFINITY) {
+                // Nothing ahead climbs. This is the top, and the top is where a stream starts.
+                if (++stalled >= STALL) {
+                    break;
+                }
+            } else {
+                stalled = 0;
                 angle += bestTurn * FOLLOW;
             }
-            angle += terrain.streams().getValue(step * 0.28D, lane, 0.0D) * WIGGLE;
-            px += Math.sin(angle);
-            pz += Math.cos(angle);
+            // A waver, applied to where this step goes without being kept. Added into the heading it was
+            // integrated instead, and a noise this slow integrated over a hundred steps is not a waver at
+            // all but a long steady curve away from the valley the walk was meant to be following.
+            double wobble = terrain.streams().getValue(step * 0.28D, lane, 0.0D) * WAVER;
+            px += Math.sin(angle + wobble);
+            pz += Math.cos(angle + wobble);
+
+            // Then sideways, into whichever flank is lower. A valley is a low across the line of travel,
+            // and nothing that only compares directions ahead can find one: on an even slope the gentlest
+            // way up is the one that contours along it, which is neither climbing a wall nor lying in a
+            // trough. Measured, the course was running about a third of a block above the ground either
+            // side of it. This is the only part of the walk that looks across itself, and it is what puts
+            // the channel in the bottom of something rather than across the face of it.
+            double sideX = Math.cos(angle);
+            double sideZ = -Math.sin(angle);
+            double left = terrain.heightAt(px + sideX * TROUGH_PROBE, pz + sideZ * TROUGH_PROBE, layer);
+            double right = terrain.heightAt(px - sideX * TROUGH_PROBE, pz - sideZ * TROUGH_PROBE, layer);
+            if (Double.isFinite(left) && Double.isFinite(right) && left != right) {
+                double lean = left < right ? TROUGH_LEAN : -TROUGH_LEAN;
+                px += sideX * lean;
+                pz += sideZ * lean;
+            }
         }
-        if (nodes.size() < 2) {
+        if (nodes.size() - 1 < MIN_RUN) {
             return null;
         }
         java.util.Collections.reverse(nodes);
