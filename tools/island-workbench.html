@@ -682,7 +682,7 @@ var DEFAULTS = {
 
   streamsOn: true, streamCell: 160, streamChance: 70, streamLength: 120, streamMinRun: 20,
   streamRim: 0.08, streamFollow: 0.3, streamWaver: 0.20, streamWidth: 1, streamStall: 12,
-  streamDepth: 4, streamSlope: 0.02, streamMaxCut: 9, streamDryLip: 2,
+  streamHeadDepth: 1, streamDepth: 4, streamSlope: 0.05, streamMaxCut: 9, streamDryLip: 2,
   streamOct: -7, streamAmp: [1, 0.4],
   caveBand: 0.035, caveDepth: -2.5, skinFade: 8
 };
@@ -1003,11 +1003,11 @@ function footed(node, layer, bed) {
 function profileChannel(nodes, layer) {
   var run = nodes.length - 1;
   if (run < 1) return null;
-  var bed = nodes[0].h - 2 + S.streamSlope;
+  var bed = nodes[0].h - S.streamHeadDepth + S.streamSlope;
   for (var k = 0; k <= run; k++) {
     var n = nodes[k];
     var along = k / run;
-    var want = 2 + (S.streamDepth - 2) * along;
+    var want = S.streamHeadDepth + (S.streamDepth - S.streamHeadDepth) * along;
     var previous = bed;
     bed = Math.min(bed - S.streamSlope, n.h - want);
     bed = Math.max(bed, Math.min(previous, n.h - S.streamMaxCut));
@@ -1094,11 +1094,13 @@ function streamPath(plan) {
       for (var z = z0; z <= z1; z++) {
         var away = segmentDistance(x + 0.5, z + 0.5, a, n);
         if (away > radius) continue;
-        // V shaped: the floor rises a block for every block out from the middle, and no further than the
-        // half width however far the bridging reach had to stretch. The last few nodes are cut like the
-        // rest but carry no source, so what goes over the edge is water already moving.
-        out.push({ x: x, z: z, floor: n.bed + Math.min(n.half, Math.round(away)),
-                   along: n.along, wet: k <= lastWet });
+        // The first ring shares the middle.s floor rather than stepping up from it, so the bottom of the
+        // channel is flat and as wide as the channel is: one column at the head and three by the mouth.
+        // Stepping up from the very middle left a bed one column wide the whole way, and a thread of
+        // water at the bottom of a trench reads as a trench with a wet floor rather than as a stream.
+        var drop = Math.max(0, Math.min(n.half, Math.round(away)) - 1);
+        out.push({ x: x, z: z, floor: n.bed + drop,
+                   along: n.along, wet: drop === 0 && k <= lastWet });
       }
     }
   }
@@ -1436,7 +1438,7 @@ function buildGrid(fast) {
              S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
              S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
              S.streamRim, S.streamFollow, S.streamWaver, S.streamWidth, S.streamStall,
-             S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamDryLip].join("|");
+             S.streamHeadDepth, S.streamDepth, S.streamSlope, S.streamMaxCut, S.streamDryLip].join("|");
   if (key === gridKey && GRID) return;
   gridKey = key;
 
@@ -1868,8 +1870,10 @@ var GROUPS = [
         note: "Radians a single step may be thrown off course. Applied to the step and not kept: added into the heading it accumulates, and a noise slower than the run is then a long steady curve rather than a waver." },
       { k: "streamWidth", label: "Width at the mouth", min: 0, max: 5, step: 1, dp: 0,
         note: "Half width in blocks at the drop, tapering to nothing at the head." },
+      { k: "streamHeadDepth", label: "Depth at the head", min: 0, max: 6, step: 1, dp: 0,
+        note: "How far below the ground the bed sits where the channel begins. A groove, not a trench: at two the head read as a trench that happened to start somewhere rather than as a stream beginning." },
       { k: "streamDepth", label: "Depth at the mouth", min: 2, max: 12, step: 1, dp: 0,
-        note: "How far below the ground the bed sits by the time it goes over. It starts at two and reaches this." },
+        note: "And by the time it goes over. The channel ramps between the two." },
       { k: "streamSlope", label: "Least fall per block", min: 0, max: 0.4, step: 0.01, dp: 2,
         note: "The bed drops at least this much every block even where the ground is level, which is what keeps water moving across a deck." },
       { k: "streamMaxCut", label: "Deepest cut", min: 4, max: 40, step: 1, dp: 0,
@@ -2068,7 +2072,7 @@ function writeOut() {
                mouthNearEdge: round(S.streamRim, 3), patienceAtTop: S.streamStall,
                headsInland: round(S.streamFollow, 3),
                waver: round(S.streamWaver, 3),
-               widthAtMouth: S.streamWidth, depthAtMouth: S.streamDepth,
+               widthAtMouth: S.streamWidth, depthAtHead: S.streamHeadDepth, depthAtMouth: S.streamDepth,
                leastFallPerBlock: round(S.streamSlope, 3), deepestCut: S.streamMaxCut,
                dryLip: S.streamDryLip, waverOctave: S.streamOct,
                visibleHere: lastStreams, medianRun: lastStreamRun, medianFall: lastStreamFall },

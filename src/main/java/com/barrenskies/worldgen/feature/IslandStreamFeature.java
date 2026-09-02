@@ -109,11 +109,22 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     /** Steps with nothing further in than here before that is called the head. */
     private static final int STALL = 12;
 
+    /** How deep the channel is cut where it starts, before the ramp towards the mouth. */
+    private static final int HEAD_DEPTH = 1;
+
     /** Half width in blocks at the drop, tapering to nothing at the head. */
     private static final int HALF_WIDTH = 1;
 
-    /** The bed falls at least this much a block even over level ground, so water keeps moving on a deck. */
-    private static final double SLOPE = 0.02D;
+    /**
+     * The bed falls at least this much a block even over level ground.
+     *
+     * <p>Which is what makes the fall visible along the length of a channel rather than only at the two
+     * ends of it. Since the course is steered by how far inland it is and not by height, the ground under
+     * it no longer descends of its own accord, and at two hundredths a run of forty blocks dropped less
+     * than a block over its whole length -- level, to look at. This is a twentieth: two blocks over that
+     * same run, on top of the three the depth ramp adds.
+     */
+    private static final double SLOPE = 0.05D;
 
     /** Deeper than this and the plan is thrown away rather than cut as a trench. */
     private static final int MAX_CUT = 9;
@@ -693,12 +704,14 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
     private static boolean profile(Terrain terrain, List<Node> nodes, int layer) {
         int run = nodes.size() - 1;
         int maxDepth = BarrenSkiesConfig.STREAM_DEPTH.get();
-        double bed = nodes.getFirst().bed() - 2.0D + SLOPE;
+        double bed = nodes.getFirst().bed() - HEAD_DEPTH + SLOPE;
 
         for (int step = 0; step <= run; step++) {
             Node node = nodes.get(step);
             double along = step / (double) run;
-            double want = 2.0D + (maxDepth - 2.0D) * along;
+            // A groove at the head, a channel at the mouth. It began at two and the head read as a trench
+            // that happened to start somewhere rather than as a stream beginning.
+            double want = HEAD_DEPTH + (maxDepth - HEAD_DEPTH) * along;
             double previous = bed;
             bed = Math.min(bed - SLOPE, node.bed() - want);
             // The least fall is not allowed to dig its own trench. Over a level deck it accumulates -- a
@@ -788,16 +801,21 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                     // further than the half width however far the bridging reach had to stretch. The
                     // middle never rises along the run, whatever the clamp in claim does to it, because
                     // the deepest anything has asked for so far is carried forward.
+                    // The first ring shares the middle's floor rather than stepping up from it, so the
+                    // bottom of the channel is flat and as wide as the channel is: one column at the head,
+                    // where the half width is nothing, and three by the mouth. Stepping up from the very
+                    // middle left a bed one column wide the whole way, and a thread of water at the bottom
+                    // of a trench reads as a trench with a wet floor rather than as a stream.
                     int rung = Math.min(node.half(), (int) Math.round(away));
-                    int wants = Math.min(deepest, (int) Math.floor(node.bed())) + rung;
+                    int drop = Math.max(0, rung - 1);
+                    int wants = Math.min(deepest, (int) Math.floor(node.bed())) + drop;
                     if (!claim(columns, slot, wants)) {
                         continue;
                     }
-                    if (rung == 0) {
+                    if (drop == 0) {
                         deepest = Math.min(deepest, columns.floor()[slot]);
-                        // Water only along the thread at the bottom of the channel. A source on the bank
-                        // sits a block higher than the one beside it and spills sideways out of the
-                        // channel; only the middle is a course, and only the middle was checked to be one.
+                        // Water across the floor, and only the floor. A source on a bank sits a block
+                        // above the one beside it and spills sideways out of the channel.
                         columns.wet()[slot] = step <= lastWet;
                     }
                     wanted = true;
