@@ -91,6 +91,40 @@ public final class Bench {
 
         // Section count is the other half of the story: a taller world writes more of them per chunk,
         // which is what a save costs on disk and what a load costs coming back.
+        // How high the ground actually gets, which is what decides how far the island band could come
+        // down. Asked of the ground itself and not of the heightmap, since that reports the island above
+        // a column rather than the peak below it. Every fourth column of every chunk generated.
+        int floor = com.barrenskies.BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get()
+            - com.barrenskies.worldgen.sky.SkyIslandDensity.layerReach();
+        int highest = level.getMinBuildHeight();
+        java.util.TreeMap<Integer, Integer> byBand = new java.util.TreeMap<>();
+        net.minecraft.core.BlockPos.MutableBlockPos pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int cx = 0; cx < side; cx++) {
+            for (int cz = 0; cz < side; cz++) {
+                var c = level.getChunk(2000 + cx, 2000 + cz, ChunkStatus.FULL, false);
+                if (c == null) {
+                    continue;
+                }
+                int baseX = (2000 + cx) << 4;
+                int baseZ = (2000 + cz) << 4;
+                for (int x = 0; x < 16; x += 4) {
+                    for (int z = 0; z < 16; z += 4) {
+                        for (int y = floor - 1; y > 0; y--) {
+                            pos.set(baseX + x, y, baseZ + z);
+                            if (!c.getBlockState(pos).isAir()) {
+                                highest = Math.max(highest, y);
+                                byBand.merge(y / 32 * 32, 1, Integer::sum);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        BarrenSkies.LOG.info("[bench] highest ground below the island floor: Y {}. Islands begin at Y {}, "
+            + "so the clearance is {} blocks. Column tops by 32 block band: {}",
+            highest, floor, floor - highest, byBand.descendingMap());
+
         var chunk = level.getChunk(2000, 2000, ChunkStatus.FULL, true);
         BarrenSkies.LOG.info("[bench] world is Y {} to {}, {} sections a chunk, dimension {}.",
             level.getMinBuildHeight(), level.getMaxBuildHeight(), chunk.getSections().length,
