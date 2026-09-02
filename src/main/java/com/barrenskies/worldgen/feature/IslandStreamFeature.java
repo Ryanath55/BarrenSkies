@@ -733,13 +733,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
             // always permitted -- it is up that the rule forbids -- so a shallow hollow under the channel
             // is passed by running along the bottom of it, which is what water meeting one would do.
             //
-            // A hollow too deep to reach the floor of is bridged rather than fatal. The carve lays a block
-            // under any floor that has nothing beneath it, so the channel crosses a cavern on its own bed
-            // and never opens into one, which is the thing worth preventing. Refusing the plan outright
-            // instead threw away a hundred and nineteen of the hundred and forty four channels that had
-            // reached an edge -- caves live at exactly the depth a stream is cut to, so almost every run
-            // meets one somewhere, and losing the whole run to one node of it left seven streams standing
-            // in seven thousand blocks.
+            // Where even that finds nothing the plan is kept anyway and the carve leaves those columns
+            // uncut. Refusing it outright threw away a hundred and nineteen of the hundred and forty four
+            // channels that had reached an edge, since caves sit at exactly the depth a stream is cut to
+            // and almost every run meets one somewhere.
             double lowest = node.bed() - MAX_CUT;
             while (bed > lowest && !footed(terrain, node, bed)) {
                 bed -= 1.0D;
@@ -775,7 +772,6 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
         // At least the head stays wet however short the run and however long the lip.
         int lastWet = Math.max(0, nodes.size() - 1 - DRY_LIP);
         boolean wanted = false;
-        int deepest = Integer.MAX_VALUE;
 
         for (int step = 1; step < nodes.size(); step++) {
             Node from = nodes.get(step - 1);
@@ -797,23 +793,25 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                     if (columns.surface()[slot] == UNSCANNED) {
                         sound(level, x, z, bandBottom, bandTop, slot, columns);
                     }
-                    // V shaped: the floor rises a block for every block out from the middle, and no
-                    // further than the half width however far the bridging reach had to stretch. The
-                    // middle never rises along the run, whatever the clamp in claim does to it, because
-                    // the deepest anything has asked for so far is carried forward.
                     // The first ring shares the middle's floor rather than stepping up from it, so the
                     // bottom of the channel is flat and as wide as the channel is: one column at the head,
-                    // where the half width is nothing, and three by the mouth. Stepping up from the very
-                    // middle left a bed one column wide the whole way, and a thread of water at the bottom
-                    // of a trench reads as a trench with a wet floor rather than as a stream.
+                    // where the half width is nothing, and three by the mouth.
+                    //
+                    // Taken from the plan alone. It used to carry the deepest floor anything had asked
+                    // for so far and cap every later column at it, on the grounds that the clamp in claim
+                    // only ever lowers a floor and a lowered one would otherwise be a step back up. But
+                    // the clamp lowers a floor to just under the ground, and the ground drops away hard
+                    // approaching a rim -- so one column near the mouth pinned every column after it far
+                    // below the island, the bed fill gave each of them a block to stand on, and the run
+                    // came out as a tongue of stone hanging off the underside at every mouth. The plan's
+                    // bed is already a running minimum. Carrying a second one over the top of it, built
+                    // from the ground rather than from the plan, only ever dragged the channel down.
                     int rung = Math.min(node.half(), (int) Math.round(away));
                     int drop = Math.max(0, rung - 1);
-                    int wants = Math.min(deepest, (int) Math.floor(node.bed())) + drop;
-                    if (!claim(columns, slot, wants)) {
+                    if (!claim(columns, slot, (int) Math.floor(node.bed()) + drop)) {
                         continue;
                     }
                     if (drop == 0) {
-                        deepest = Math.min(deepest, columns.floor()[slot]);
                         // Water across the floor, and only the floor. A source on a bank sits a block
                         // above the one beside it and spills sideways out of the channel.
                         columns.wet()[slot] = step <= lastWet;
@@ -964,10 +962,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * uphill, so a dry lip whose bed sat where the wet channel's water sits would meet the flow with a one
      * block step and stop it dead a stride short of going over.
      *
-     * <p>A block is laid under the floor where the floor has nothing to stand on, which happens only where
-     * the channel crosses the roof of a cave. That is safe now in a way it was not before: a column is
-     * carved once, so a bed laid under its final floor cannot land inside a channel some other pass had
-     * already opened, which is what used to leave stone standing in the water.
+     * <p>A column whose floor has nothing to stand on is left alone rather than given a block to stand on.
+     * Laying one was meant for the roof of a cave, and measured over five hundred streams it was almost
+     * never used for that: six hundred and seventy five beds laid across twenty four thousand nodes, and
+     * six hundred and seventy four of them in the last ten nodes of a run. Which is to say it fired at the
+     * mouth and essentially nowhere else, and at a mouth there is nothing underneath but sky, so each one
+     * hung a block off the underside and together they made the tongue of stone standing off every rim.
+     *
+     * <p>Skipping them instead ends the channel a block or two inside the brink, at the last column with
+     * rock under it, and the water goes over the rock rather than over something built for it.
      */
     private static boolean carve(WorldGenLevel level, int minX, int minZ, Columns columns) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -980,15 +983,15 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 if (floor == UNSCANNED) {
                     continue;
                 }
+                pos.set(x, floor - 1, z);
+                if (!level.getBlockState(pos).isSolid()) {
+                    continue;
+                }
                 for (int y = columns.surface()[slot]; y >= floor; y--) {
                     pos.set(x, y, z);
                     if (!level.getBlockState(pos).isAir()) {
                         level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
                     }
-                }
-                pos.set(x, floor - 1, z);
-                if (!level.getBlockState(pos).isSolid()) {
-                    level.setBlock(pos, Blocks.STONE.defaultBlockState(), 2);
                 }
                 if (columns.wet()[slot]) {
                     pos.set(x, floor, z);
