@@ -962,15 +962,10 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * uphill, so a dry lip whose bed sat where the wet channel's water sits would meet the flow with a one
      * block step and stop it dead a stride short of going over.
      *
-     * <p>A column whose floor has nothing to stand on is left alone rather than given a block to stand on.
-     * Laying one was meant for the roof of a cave, and measured over five hundred streams it was almost
-     * never used for that: six hundred and seventy five beds laid across twenty four thousand nodes, and
-     * six hundred and seventy four of them in the last ten nodes of a run. Which is to say it fired at the
-     * mouth and essentially nowhere else, and at a mouth there is nothing underneath but sky, so each one
-     * hung a block off the underside and together they made the tongue of stone standing off every rim.
-     *
-     * <p>Skipping them instead ends the channel a block or two inside the brink, at the last column with
-     * rock under it, and the water goes over the rock rather than over something built for it.
+     * <p>The bed laid under a floor with nothing to stand on is bounded by the island rather than being
+     * laid wherever it is wanted. Measured over five hundred streams: six hundred and seventy five of them
+     * across twenty four thousand nodes, and six hundred and seventy four in the last ten nodes of a run,
+     * which is to say at the mouth and essentially nowhere else. Under a mouth there is nothing but sky.
      */
     private static boolean carve(WorldGenLevel level, int minX, int minZ, Columns columns) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -983,9 +978,19 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 if (floor == UNSCANNED) {
                     continue;
                 }
+                // A bed under the floor where the floor has nothing to stand on, but only where laying one
+                // puts it inside the island. Below the underside there is nothing but sky, and a block
+                // hung out there is a block standing off the island; a run of them along a mouth is the
+                // tongue of stone that stood off every rim. Inside the underside it is the roof of a cave,
+                // which is what this was for, and the channel crosses it on a floor of its own.
+                //
+                // Refusing to carve those columns instead was worse than the artefact: it ended the
+                // channel a block or two inside the brink, which is the stopping short all over again.
+                // They are cut like any other and the water at them simply falls, which at a mouth is
+                // what water is supposed to do.
                 pos.set(x, floor - 1, z);
-                if (!level.getBlockState(pos).isSolid()) {
-                    continue;
+                if (!level.getBlockState(pos).isSolid() && floor - 1 >= columns.bottom()[slot]) {
+                    level.setBlock(pos, Blocks.STONE.defaultBlockState(), 2);
                 }
                 for (int y = columns.surface()[slot]; y >= floor; y--) {
                     pos.set(x, y, z);
