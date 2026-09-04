@@ -92,7 +92,6 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      */
     private static final double[] FAN = { -0.62D, -0.31D, 0.0D, 0.31D, 0.62D };
     private static final int FAN_REACH = 8;
-    private static final int STEER_EVERY = 2;
 
     /** How much of the turn towards the ground furthest inland it takes each time it steers. */
     private static final double FOLLOW = 0.30D;
@@ -175,9 +174,6 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * stands in it as a pillar, and a shallow bed is much the lesser of those.
      */
     private static final int FLOOR_KEEP = 2;
-
-    /** Below this many blocks of rock a column is the very brink and is left alone. */
-    private static final int MIN_THICKNESS = 2;
 
     /**
      * A gap in a column this tall or shorter is something inside the island rather than the end of it.
@@ -511,7 +507,6 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 random.getOrCreateNoise(SkyIslandDensity.ISLAND_RIDGES),
                 random.getOrCreateNoise(SkyIslandDensity.ISLAND_DETAIL),
                 random.getOrCreateNoise(SkyIslandDensity.ISLAND_LANDFORM),
-                random.getOrCreateNoise(SkyIslandDensity.ISLAND_CAVES),
                 BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(),
                 BarrenSkiesConfig.SKY_ISLAND_TOP.get(),
                 BarrenSkiesConfig.ISLAND_LAYERS.get(),
@@ -519,8 +514,7 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
                 BarrenSkiesConfig.ISLAND_SCALE.get(),
                 BarrenSkiesConfig.LANDFORM_STRENGTH.get(),
                 BarrenSkiesConfig.LANDFORM_SQUASH.get(),
-                BarrenSkiesConfig.LANDFORM_NOISE.get(),
-                BarrenSkiesConfig.ISLAND_CAVES.get()
+                BarrenSkiesConfig.LANDFORM_NOISE.get()
             ),
             random.getOrCreateNoise(SkyIslandDensity.ISLAND_STREAMS)
         );
@@ -794,9 +788,8 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * @return whether any column in this chunk is wanted at all
      */
     private static boolean mark(WorldGenLevel level, Plan plan, int minX, int minZ, Columns columns) {
-        int reach = SkyIslandDensity.layerReach();
-        int bandBottom = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - reach;
-        int bandTop = BarrenSkiesConfig.SKY_ISLAND_TOP.get() + reach * 2;
+        int bandBottom = SkyIslandDensity.islandFloor();
+        int bandTop = SkyIslandDensity.islandCeiling();
         List<Node> nodes = plan.nodes();
         // At least the head stays wet however short the run and however long the lip.
         int lastWet = Math.max(0, nodes.size() - 1 - DRY_LIP);
@@ -889,9 +882,8 @@ public class IslandStreamFeature extends Feature<NoneFeatureConfiguration> {
      * <p>Only columns bracketed on an axis are touched. A channel wall is bounded on one side and stays.
      */
     private static void close(WorldGenLevel level, int minX, int minZ, Columns columns) {
-        int reach = SkyIslandDensity.layerReach();
-        int bandBottom = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - reach;
-        int bandTop = BarrenSkiesConfig.SKY_ISLAND_TOP.get() + reach * 2;
+        int bandBottom = SkyIslandDensity.islandFloor();
+        int bandTop = SkyIslandDensity.islandCeiling();
 
         for (int x = minX; x < minX + 16; x++) {
             for (int z = minZ; z < minZ + 16; z++) {

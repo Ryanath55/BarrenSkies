@@ -2,7 +2,17 @@
   "generator.barrenskies.barren_skies": "Barren Skies",
 
   "barrenskies.configuration.title": "Barren Skies",
-  "barrenskies.configuration.section.layers": "Layers",
+
+  "barrenskies.configuration.section.islands": "Islands",
+  "barrenskies.configuration.section.islands.title": "Islands",
+  "barrenskies.configuration.section.shape": "Island shape",
+  "barrenskies.configuration.section.shape.title": "Island shape",
+  "barrenskies.configuration.section.resources": "Ore and light",
+  "barrenskies.configuration.section.resources.title": "Ore and light",
+  "barrenskies.configuration.section.water": "Water",
+  "barrenskies.configuration.section.water.title": "Water",
+  "barrenskies.configuration.section.biomes": "Biomes",
+  "barrenskies.configuration.section.biomes.title": "Biomes",
 
   "barrenskies.configuration.skyIslandBottom": "Sky island floor (Y)",
   "barrenskies.configuration.skyIslandTop": "Sky island ceiling (Y)",
@@ -10,19 +20,26 @@
   "barrenskies.configuration.islandThreshold": "Island coverage threshold",
   "barrenskies.configuration.islandScale": "Island scale",
   "barrenskies.configuration.islandThickness": "Island thickness",
+
+  "barrenskies.configuration.landformNoise": "Landform noise",
+  "barrenskies.configuration.landformStrength": "Landform noise strength",
+  "barrenskies.configuration.landformSquash": "Landform vertical squash",
   "barrenskies.configuration.islandCaves": "Caves in islands",
+
+  "barrenskies.configuration.islandOreRarity": "Island ore rarity (%)",
+  "barrenskies.configuration.islandShadow": "Islands cast shadow below",
+
   "barrenskies.configuration.islandWaterfalls": "Island waterfalls",
   "barrenskies.configuration.waterfallIslandChance": "Islands with water (%)",
   "barrenskies.configuration.streamDepth": "Stream channel depth",
   "barrenskies.configuration.waterfallsOnlyOverWater": "Only over sea or river",
-  "barrenskies.configuration.landformNoise": "Landform noise",
-  "barrenskies.configuration.landformStrength": "Landform noise strength",
-  "barrenskies.configuration.landformSquash": "Landform vertical squash",
   "barrenskies.configuration.islandWater": "Water in islands",
+
   "barrenskies.configuration.altitudeCooling": "Biomes cool with altitude",
   "barrenskies.configuration.liftSurfaceRules": "Lift surface rules to islands",
   "barrenskies.configuration.oceanContinentalnessMax": "Ocean continentalness cutoff",
   "barrenskies.configuration.aridTemperatureMin": "Arid temperature cutoff",
   "barrenskies.configuration.aridRequiresNoRain": "Arid biomes must be rainless",
-  "barrenskies.configuration.includeModdedBiomes": "Use biomes from other mods"
+  "barrenskies.configuration.includeModdedBiomes": "Use biomes from other mods",
+  "barrenskies.configuration.reconcileModdedPlacement": "Apply layer rules to other mods' biomes"
 }

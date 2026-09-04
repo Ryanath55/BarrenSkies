@@ -68,6 +68,11 @@ neoForge {
             if (project.hasProperty('bench')) {
                 systemProperty 'barrenskies.bench', project.property('bench')
             }
+            // -Pcensus=N counts which biomes the world would place at ground and island height over
+            // an N by N thousand-block area, which is how a claim about the layers gets checked.
+            if (project.hasProperty('census')) {
+                systemProperty 'barrenskies.census', project.property('census')
+            }
         }
         // This run config launches GameTestServer and runs all registered gametests, then exits.
         // By default, the server will crash when no gametests are provided.

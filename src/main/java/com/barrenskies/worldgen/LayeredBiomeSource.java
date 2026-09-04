@@ -42,6 +42,17 @@ public class LayeredBiomeSource extends BiomeSource {
             .apply(instance, LayeredBiomeSource::new)
     );
 
+    /**
+     * Where the ground stops being the surface.
+     *
+     * <p>Vanilla puts its surface biomes at a depth of exactly zero and starts its underground bands at
+     * 0.2, so that is the line. Measured rather than assumed: sampled at the actual height of the ground,
+     * a thousand columns came back between -0.8 and +0.3, with a quarter of them a little above zero.
+     * Testing for depth above zero therefore called a quarter of the open surface underground and left
+     * every modded biome standing on it, which is the whole bug this is here to fix.
+     */
+    private static final long UNDERGROUND_DEPTH = Climate.quantizeCoord(0.2F);
+
     private final HolderGetter<Biome> biomes;
     private final Holder<MultiNoiseBiomeSourceParameterList> overworldParameters;
     private final Supplier<Layers> layers = Suppliers.memoize(this::buildLayers);
@@ -75,6 +86,80 @@ public class LayeredBiomeSource extends BiomeSource {
      */
     public List<Holder<Biome>> skyBiomes() {
         return this.layers.get().skyBiomes();
+    }
+
+    /**
+     * Applies the layer rules to a biome some other mod chose for this position.
+     *
+     * <p>Blueprint's modded biome slices, and anything else that wraps a dimension's biome source, answer
+     * the lookup before this class ever sees it, so the climate space built above is simply skipped for
+     * every point they claim. That is how a rainforest ends up on the barren surface. Reconciling here
+     * puts the same decisions back on top of whatever came out: the surface pass asks whether the biome
+     * belongs on arid ground and substitutes from the same palette if it does not, and the sky pass lets
+     * dry land through and remaps everything else. Their biomes, our layers, which is the compat model
+     * the rest of the mod already follows.
+     *
+     * <p>The climate is sampled only when a decision actually needs it. Most lookups come back with a
+     * biome this class chose itself -- a slice hands the position straight back whenever its own table
+     * says the original source owns it -- and those are recognised from the pool alone.
+     */
+    public Holder<Biome> reconcile(Holder<Biome> biome, int quartX, int quartY, int quartZ, Climate.Sampler sampler) {
+        Layers current = this.layers.get();
+        return QuartPos.toBlock(quartY) >= current.skyBottom()
+            ? reconcileSky(current.rules(), biome, quartX, quartY, quartZ, sampler)
+            : reconcileSurface(current.rules(), biome, quartX, quartY, quartZ, sampler);
+    }
+
+    private static Holder<Biome> reconcileSurface(
+        Rules rules, Holder<Biome> biome, int quartX, int quartY, int quartZ, Climate.Sampler sampler
+    ) {
+        // Whatever the climate pass already decided belongs down here, including the cave biomes it left
+        // alone, needs no second look. One lookup, and it is what the great majority of positions take.
+        if (rules.lowerBiomes().contains(biome)) {
+            return biome;
+        }
+        boolean denied = biome.is(BarrenSkiesTags.DENIED_ON_SURFACE);
+        Kind kind = Kind.of(biome);
+        if (!denied && (biome.is(BarrenSkiesTags.ALLOWED_ON_SURFACE) || kind != Kind.LAND)) {
+            return biome;
+        }
+
+        Climate.TargetPoint target = sampler.sample(quartX, quartY, quartZ);
+        // Underground, where the cave biomes and the deep copies of the surface ones live. Layer one is
+        // vanilla by design, so nothing down here is ours to swap.
+        if (target.depth() >= UNDERGROUND_DEPTH) {
+            return biome;
+        }
+        boolean oceanic = target.continentalness() <= rules.oceanContinentalnessMax();
+        if (!denied
+            && (oceanic
+                || (target.temperature() >= rules.aridTemperatureMin()
+                    && (!rules.aridRequiresNoRain() || !biome.value().hasPrecipitation())))) {
+            return biome;
+        }
+
+        // As in the climate pass: the replacement follows the terrain rather than the biome that was
+        // here, so a point at ocean continentalness is refilled with an ocean whatever was painted on it.
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette = rules.palettes().get(oceanic ? Kind.OCEAN : kind);
+        if (palette == null || palette.isEmpty()) {
+            return biome;
+        }
+        return nearest(target, palette, LayeredBiomeSource::shapeDistanceFrom);
+    }
+
+    private static Holder<Biome> reconcileSky(
+        Rules rules, Holder<Biome> biome, int quartX, int quartY, int quartZ, Climate.Sampler sampler
+    ) {
+        // A modded biome that is dry land and not barren-surface material is exactly what an island wants,
+        // so it passes straight through. This is the one place the slices are welcome.
+        if (suitsSky(rules.barren(), biome) || rules.skyPalette().isEmpty()) {
+            return biome;
+        }
+        return nearest(sampler.sample(quartX, quartY, quartZ), rules.skyPalette(), LayeredBiomeSource::climateDistanceFrom);
+    }
+
+    private static boolean suitsSky(Set<Holder<Biome>> barren, Holder<Biome> biome) {
+        return !barren.contains(biome) && Kind.of(biome) == Kind.LAND && !biome.is(BarrenSkiesTags.DENIED_IN_SKY);
     }
 
     @Override
@@ -200,10 +285,7 @@ public class LayeredBiomeSource extends BiomeSource {
         lower.stream().skip(caves.size()).forEach(entry -> barren.add(entry.getSecond()));
         // Oceans, rivers and beaches all need a shoreline or a valley to make sense of them; on an island
         // they are just misnamed ground. Dry land only up there.
-        java.util.function.Predicate<Holder<Biome>> suitsSky =
-            biome -> !barren.contains(biome)
-                && Kind.of(biome) == Kind.LAND
-                && !biome.is(BarrenSkiesTags.DENIED_IN_SKY);
+        java.util.function.Predicate<Holder<Biome>> suitsSky = biome -> suitsSky(barren, biome);
 
         // The island pool is remapped the same way the surface is, rather than filtered. Dropping entries
         // would leave holes for the nearest surviving entry to fill, which is how deserts and oceans kept
@@ -232,12 +314,25 @@ public class LayeredBiomeSource extends BiomeSource {
         );
 
         BarrenSkies.LOG.info("Barren Skies biome pools: {} entries below the island band, {} above.", lower.size(), sky.size());
+
+        Set<Holder<Biome>> lowerBiomes = new LinkedHashSet<>();
+        lower.forEach(entry -> lowerBiomes.add(entry.getSecond()));
+
         return new Layers(
             new Climate.ParameterList<>(List.copyOf(lower)),
             new Climate.ParameterList<>(List.copyOf(sky)),
             Set.copyOf(everything),
             skyBiomes,
-            BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - com.barrenskies.worldgen.sky.SkyIslandDensity.layerReach()
+            com.barrenskies.worldgen.sky.SkyIslandDensity.islandFloor(),
+            new Rules(
+                java.util.Map.copyOf(palettes),
+                skyPalette,
+                Set.copyOf(lowerBiomes),
+                Set.copyOf(barren),
+                oceanContinentalnessMax,
+                aridTemperatureMin,
+                aridRequiresNoRain
+            )
         );
     }
 
@@ -361,10 +456,10 @@ public class LayeredBiomeSource extends BiomeSource {
     }
 
     /** The closest biome in a palette under the given idea of closeness. */
-    private static Holder<Biome> nearest(
-        Climate.ParameterPoint point,
+    private static <P> Holder<Biome> nearest(
+        P point,
         List<Pair<Climate.ParameterPoint, Holder<Biome>>> palette,
-        java.util.function.ToLongBiFunction<Climate.ParameterPoint, Climate.ParameterPoint> distance
+        java.util.function.ToLongBiFunction<P, Climate.ParameterPoint> distance
     ) {
         Holder<Biome> best = palette.getFirst().getSecond();
         long bestDistance = Long.MAX_VALUE;
@@ -403,8 +498,29 @@ public class LayeredBiomeSource extends BiomeSource {
     }
 
     private static long gap(Climate.Parameter from, Climate.Parameter to) {
-        long midpoint = (from.min() + from.max()) / 2L;
-        return Math.max(0L, Math.max(to.min() - midpoint, midpoint - to.max()));
+        return gap((from.min() + from.max()) / 2L, to);
+    }
+
+    /** The same measure taken from one sampled value rather than from the middle of a range. */
+    private static long gap(long from, Climate.Parameter to) {
+        return Math.max(0L, Math.max(to.min() - from, from - to.max()));
+    }
+
+    /** {@link #shapeDistance} measured from a point the climate was actually sampled at. */
+    private static long shapeDistanceFrom(Climate.TargetPoint from, Climate.ParameterPoint to) {
+        return square(gap(from.continentalness(), to.continentalness()))
+            + square(gap(from.erosion(), to.erosion()))
+            + square(gap(from.weirdness(), to.weirdness()))
+            + square(gap(from.depth(), to.depth()));
+    }
+
+    /** {@link #climateDistance} measured from a point the climate was actually sampled at. */
+    private static long climateDistanceFrom(Climate.TargetPoint from, Climate.ParameterPoint to) {
+        return square(gap(from.temperature(), to.temperature()))
+            + square(gap(from.humidity(), to.humidity()))
+            + square(gap(from.continentalness(), to.continentalness()))
+            + square(gap(from.erosion(), to.erosion()))
+            + square(gap(from.weirdness(), to.weirdness()));
     }
 
     private static String name(Holder<Biome> biome) {
@@ -420,7 +536,23 @@ public class LayeredBiomeSource extends BiomeSource {
         Climate.ParameterList<Holder<Biome>> sky,
         Set<Holder<Biome>> all,
         List<Holder<Biome>> skyBiomes,
-        int skyBottom
+        int skyBottom,
+        Rules rules
+    ) {
+    }
+
+    /**
+     * What the two passes above decided, kept in a form that can decide the same thing again for a single
+     * sampled point. Only {@link #reconcile} uses it, and only when another mod has taken the lookup over.
+     */
+    private record Rules(
+        java.util.Map<Kind, List<Pair<Climate.ParameterPoint, Holder<Biome>>>> palettes,
+        List<Pair<Climate.ParameterPoint, Holder<Biome>>> skyPalette,
+        Set<Holder<Biome>> lowerBiomes,
+        Set<Holder<Biome>> barren,
+        long oceanContinentalnessMax,
+        long aridTemperatureMin,
+        boolean aridRequiresNoRain
     ) {
     }
 }

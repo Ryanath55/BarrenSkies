@@ -19,9 +19,16 @@ import net.minecraft.world.level.levelgen.structure.Structure;
  * down properly would mean changing a signature that runs through the whole of worldgen; this reaches the
  * same place without asking anyone else to carry the parameter. It is a boolean rather than the structure
  * itself so that nothing here holds a registry or a holder open a moment longer than the call.
+ *
+ * <p>It is noted twice, because a structure is sited twice. Structure.generate picks the point, and that
+ * was the only place this covered at first -- which was not enough, because a shipwreck throws that point
+ * away. Its pieces work out their own height when they are built, from the finished world rather than
+ * from the generator, and the finished world has islands in it. So StructureStart.placeInChunk notes the
+ * structure again for the building phase.
  */
 public final class StructureIntent {
-    private static final ThreadLocal<Boolean> GROUND = ThreadLocal.withInitial(() -> Boolean.TRUE);
+    /** Unset on every thread that is not placing a structure, which is most of them. */
+    private static final ThreadLocal<Boolean> GROUND = new ThreadLocal<>();
 
     private StructureIntent() {
     }
@@ -41,7 +48,21 @@ public final class StructureIntent {
      * and those want the ground too, so that is the default and the value it goes back to.
      */
     public static boolean wantsGround() {
-        return GROUND.get();
+        Boolean ground = GROUND.get();
+        return ground == null || ground;
+    }
+
+    /**
+     * Whether a structure that must have the ground is being built right now, on this thread.
+     *
+     * <p>The same state read the other way round, and the difference is what nothing asking means. The
+     * generator is asked how high a column is almost only by structures, so a thread with nothing noted
+     * can be given the ground and no harm done. The world height a piece reads while it is being built is
+     * asked by everything there is -- every feature, every tree, every block of gravel deciding whether
+     * to fall -- and to those the absence of a structure has to mean leave the answer alone.
+     */
+    public static boolean placingOnGround() {
+        return Boolean.TRUE.equals(GROUND.get());
     }
 
     /**

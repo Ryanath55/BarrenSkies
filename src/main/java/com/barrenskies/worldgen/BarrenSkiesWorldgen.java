@@ -69,6 +69,7 @@ public final class BarrenSkiesWorldgen {
 
     static {
         BIOME_SOURCES.register("layered", () -> LayeredBiomeSource.CODEC);
+        BIOME_SOURCES.register("reconciled", () -> com.barrenskies.worldgen.compat.ReconciledBiomeSource.CODEC);
         CHUNK_GENERATORS.register("sky_islands", () -> SkyIslandChunkGenerator.CODEC);
     }
 
@@ -183,7 +184,11 @@ public final class BarrenSkiesWorldgen {
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_RIDGES),
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_DETAIL),
                 context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_CAVES),
-                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_LANDFORM)
+                context.lookup(Registries.NOISE).getOrThrow(com.barrenskies.worldgen.sky.SkyIslandDensity.ISLAND_LANDFORM),
+                // Datagen only writes this stem out; nothing on this path ever asks it to generate, so
+                // the two registry lookups the island caves need are never dereferenced here.
+                null,
+                null
             )
         );
         LevelStem nether = new LevelStem(

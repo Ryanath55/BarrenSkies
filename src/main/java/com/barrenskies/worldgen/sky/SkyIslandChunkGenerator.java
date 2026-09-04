@@ -33,18 +33,31 @@ import net.minecraft.world.level.levelgen.synth.NormalNoise;
 public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     public static final MapCodec<SkyIslandChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(
         instance -> instance.group(
-                BiomeSource.CODEC.fieldOf("biome_source").forGetter(generator -> generator.getBiomeSource()),
+                // The source this generator was built with, not the one it is currently using. A mod that
+                // takes biome placement over swaps the live one out; writing that back would save its
+                // wrapper into level.dat and bake a dependency on it into the world.
+                BiomeSource.CODEC.fieldOf("biome_source").forGetter(generator -> generator.declaredBiomeSource),
                 NoiseGeneratorSettings.CODEC.fieldOf("settings").forGetter(generator -> generator.baseSettings),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLANDS),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_RIDGES),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_DETAIL),
                 RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_CAVES),
-                RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_LANDFORM)
+                RegistryOps.retrieveElement(SkyIslandDensity.ISLAND_LANDFORM),
+                // Not fields of the generator: retrieved from the ops the settings are read through, so
+                // nothing is added to what gets written back out. The island caves need both to encode
+                // and re-read the overworld cave functions, which is how their heights get moved.
+                RegistryOps.retrieveRegistryLookup(net.minecraft.core.registries.Registries.DENSITY_FUNCTION)
+                    .forGetter(generator -> generator.functions),
+                RegistryOps.retrieveRegistryLookup(net.minecraft.core.registries.Registries.NOISE)
+                    .forGetter(generator -> generator.noises)
             )
             .apply(instance, SkyIslandChunkGenerator::new)
     );
 
+    private final BiomeSource declaredBiomeSource;
     private final Holder<NoiseGeneratorSettings> baseSettings;
+    private final net.minecraft.core.HolderLookup.RegistryLookup<DensityFunction> functions;
+    private final net.minecraft.core.HolderLookup.RegistryLookup<NormalNoise.NoiseParameters> noises;
 
     public SkyIslandChunkGenerator(
         BiomeSource biomeSource,
@@ -53,12 +66,17 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         Holder<NormalNoise.NoiseParameters> ridges,
         Holder<NormalNoise.NoiseParameters> detail,
         Holder<NormalNoise.NoiseParameters> caves,
-        Holder<NormalNoise.NoiseParameters> landform
+        Holder<NormalNoise.NoiseParameters> landform,
+        net.minecraft.core.HolderLookup.RegistryLookup<DensityFunction> functions,
+        net.minecraft.core.HolderLookup.RegistryLookup<NormalNoise.NoiseParameters> noises
     ) {
         // Wrapped lazily: data generation builds the generator while the settings are still unbound, and
         // dereferencing them there fails.
-        super(biomeSource, new LazySettings(settings, islands, ridges, detail, caves, landform));
+        super(biomeSource, new LazySettings(settings, islands, ridges, detail, caves, landform, functions, noises));
+        this.declaredBiomeSource = biomeSource;
         this.baseSettings = settings;
+        this.functions = functions;
+        this.noises = noises;
     }
 
     /**
@@ -86,7 +104,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static net.minecraft.world.level.LevelHeightAccessor groundOnly(
         net.minecraft.world.level.LevelHeightAccessor level
     ) {
-        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach();
+        int floor = SkyIslandDensity.islandFloor();
         int bottom = level.getMinBuildHeight();
         int height = Math.min(level.getHeight(), Math.max(16, floor - bottom));
         return net.minecraft.world.level.LevelHeightAccessor.create(bottom, height);
@@ -122,6 +140,17 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         return CODEC;
     }
 
+    /**
+     * The biome source the world preset asked for, which stays put whatever happens to the live one.
+     *
+     * <p>{@link #getBiomeSource()} answers with whatever is installed right now, and that is deliberately
+     * not always this: another mod may have wrapped it. This is what the layer rules are read back out of
+     * when that has happened, and what gets written when the world is saved.
+     */
+    public BiomeSource declaredBiomeSource() {
+        return this.declaredBiomeSource;
+    }
+
     @Override
     public java.util.concurrent.CompletableFuture<net.minecraft.world.level.chunk.ChunkAccess> createBiomes(
         net.minecraft.world.level.levelgen.RandomState randomState,
@@ -130,7 +159,7 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         net.minecraft.world.level.chunk.ChunkAccess chunk
     ) {
         // Islands hang a layer reach below the configured floor, so the biome switch has to sit that low too.
-        int floor = BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach();
+        int floor = SkyIslandDensity.islandFloor();
         int layerCount = BarrenSkiesConfig.ISLAND_LAYERS.get();
         double threshold = BarrenSkiesConfig.ISLAND_THRESHOLD.get();
         double scale = BarrenSkiesConfig.ISLAND_SCALE.get();
@@ -198,19 +227,6 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /**
-     * The highest a layer centre may sit and still have its island fit under the world ceiling.
-     *
-     * <p>Rock fades out twice the layer reach above a centre, so a band top left where the config asks
-     * for it can want ground above the top of the world, and what it gets instead is a flat slice where
-     * the island was cut off by the build limit. Only bites where the two have been set against each
-     * other -- a tall island band in a world sized for a shorter one -- which is exactly what happens
-     * when the defaults move and an existing config file does not.
-     */
-    private static int ceilingFor(int reach) {
-        return BarrenSkiesWorldgen.WORLD_MIN_Y + BarrenSkiesWorldgen.WORLD_HEIGHT - 1 - reach * 2;
-    }
-
-    /**
      * Rebuilds the world's noise settings with the islands added and room above for them to sit in.
      *
      */
@@ -220,28 +236,29 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
         Holder<NormalNoise.NoiseParameters> ridgeNoise,
         Holder<NormalNoise.NoiseParameters> detailNoise,
         Holder<NormalNoise.NoiseParameters> caveNoise,
-        Holder<NormalNoise.NoiseParameters> landformNoise
+        Holder<NormalNoise.NoiseParameters> landformNoise,
+        net.minecraft.core.HolderLookup.RegistryLookup<DensityFunction> functions,
+        net.minecraft.core.HolderLookup.RegistryLookup<NormalNoise.NoiseParameters> noises
     ) {
         NoiseGeneratorSettings settings = base.value();
         NoiseRouter router = settings.noiseRouter();
 
         int reach = SkyIslandDensity.layerReach();
-        int bandBottom = Math.min(BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get(), ceilingFor(reach));
-        int bandTop = Math.min(
-            Math.max(bandBottom, BarrenSkiesConfig.SKY_ISLAND_TOP.get()), ceilingFor(reach)
-        );
+        int bandBottom = SkyIslandDensity.bandBottom();
+        int bandTop = SkyIslandDensity.bandTop();
 
         DensityFunction islands = SkyIslandDensity.build(
             islandNoise,
             ridgeNoise,
             detailNoise,
-            caveNoise,
             landformNoise,
             bandBottom,
             bandTop,
             BarrenSkiesConfig.ISLAND_LAYERS.get(),
             BarrenSkiesConfig.ISLAND_THRESHOLD.get(),
-            BarrenSkiesConfig.ISLAND_SCALE.get()
+            BarrenSkiesConfig.ISLAND_SCALE.get(),
+            functions,
+            noises
         );
 
         NoiseRouter withIslands = new NoiseRouter(
@@ -276,11 +293,18 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             settings.defaultFluid(),
             withIslands,
             // Surface rules are written against ground level heights, so at island altitude they take their
-            // wrong branch. Lifted copies apply above the island floor; the ground keeps the originals.
+            // wrong branch. Lifted copies apply above this height; the ground keeps the originals.
+            //
+            // Deliberately one layer reach under the band rather than islandFloor, which the pointed
+            // underside took a good deal lower. The two errors are not the same size. Rock below this line
+            // is the deep interior of an island underside, a hundred blocks down its own stone run, where
+            // every surface rule that could fire wants a run top and there is none -- so it comes out as
+            // stone either way. Ground caught above the line is a real surface handed the wrong rules, and
+            // the barren layer was measured topping out at Y 251 against a floor here of 298.
             BarrenSkiesConfig.LIFT_SURFACE_RULES.get()
                 ? LiftedSurfaceRules.liftAbove(
                     settings.surfaceRule(),
-                    BarrenSkiesConfig.SKY_ISLAND_BOTTOM.get() - SkyIslandDensity.layerReach(),
+                    SkyIslandDensity.bandBottom() - SkyIslandDensity.layerReach(),
                     settings.seaLevel()
                 )
                 : settings.surfaceRule(),
@@ -308,9 +332,12 @@ public class SkyIslandChunkGenerator extends NoiseBasedChunkGenerator {
             Holder<NormalNoise.NoiseParameters> ridges,
             Holder<NormalNoise.NoiseParameters> detail,
             Holder<NormalNoise.NoiseParameters> caves,
-            Holder<NormalNoise.NoiseParameters> landform
+            Holder<NormalNoise.NoiseParameters> landform,
+            net.minecraft.core.HolderLookup.RegistryLookup<DensityFunction> functions,
+            net.minecraft.core.HolderLookup.RegistryLookup<NormalNoise.NoiseParameters> noises
         ) {
-            this(base, Suppliers.memoize(() -> withIslands(base, islands, ridges, detail, caves, landform)));
+            this(base, Suppliers.memoize(
+                () -> withIslands(base, islands, ridges, detail, caves, landform, functions, noises)));
         }
 
         @Override

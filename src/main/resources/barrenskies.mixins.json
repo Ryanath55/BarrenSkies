@@ -6,7 +6,20 @@
   "refmap": "barrenskies.refmap.json",
   "mixins": [
     "BiomeTemperatureMixin",
-    "StructureGenerateMixin"
+    "StructureGenerateMixin",
+    "StructurePlaceMixin",
+    "WorldGenHeightMixin",
+    "OrePlacementMixin",
+    "MirroredOreGuardMixin",
+    "OreAirExposureMixin",
+    "SkyLightSourcesMixin",
+    "SkyLightEngineMixin",
+    "SkyLightStorageAccessor",
+    "SkyLightStorageMixin",
+    "LightEngineAccessor",
+    "LayerLightStorageAccessor",
+    "ChunkGeneratorAccessor",
+    "ServerLoadLevelMixin"
   ],
   "injectors": {
     "defaultRequire": 1

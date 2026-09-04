@@ -314,6 +314,8 @@ input[type=range]::-moz-range-thumb {
 }
 input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
 
+.curve { display: block; width: 100%; height: auto; margin: 4px 0 10px;
+         background: var(--panel-2); border: 1px solid var(--rule-soft); border-radius: 6px; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 .pair .row, .amps .row { padding-top: 8px; border-top: 0; }
 
@@ -674,6 +676,11 @@ var DEFAULTS = {
   bowl: [[0.02, 0.350], [0.05, 0.550], [0.10, 0.750],
          [0.18, 0.880], [0.30, 0.960], [0.50, 0.9875]],
 
+  spikeOn: true,
+  spikeDepth: 1.55, spikeAt: 0.30,
+  spikeRim: 0.55, spikeKneeAt: 0.42, spikeKneeDepth: 0.30, spikeKneeSlope: 2.10,
+  spikeTip: 0.60,
+
   detailOn: true, detailStrength: 0.038, detailOct: -5, detailAmp: [1, 0.6, 0.3],
 
   t3On: true, t3Strength: 0.15, t3Oct: -6, t3Squash: 0.55, t3Amp: [1, 0.5, 0.25],
@@ -730,9 +737,31 @@ function deckSpline() {
     { loc: 1.00,  val: topSpline(S.deckOuter[0], S.deckOuter[1]), der: 0 }
   ]);
 }
+/* underside(), the pointed version: one arc that flares out under the rim, steepens through a knee, and
+   runs on down to a tip. The bowl it replaces only ever eased off -- steepest at the rim and flattest in
+   the middle -- which is a hemisphere, and reads as one.
+   Convex above the knee and concave below it, or the other way round, or neither: rim, knee and tip
+   slopes are three separate sliders and the inflection is wherever they put it. Past the last point the
+   spline extrapolates along the tip slope, so a steep tip keeps deepening on the biggest islands instead
+   of stopping flat -- which is what makes a point rather than a plug. layerValue clamps the drop at two
+   reaches whatever this says, so the deepest an island can hang is 2 x thickness. */
+function spikeSpline() {
+  var full = Math.max(0.02, S.spikeAt);
+  var D = S.spikeDepth;
+  var knee = clamp(full * S.spikeKneeAt, 0.005, full - 0.005);
+  return spline("mask", [
+    { loc: -1.0, val: -1.4, der: 0 },
+    { loc: -0.08, val: -0.25, der: 1.6 },
+    { loc: 0.0, val: 0.0, der: S.spikeRim },
+    { loc: knee, val: D * S.spikeKneeDepth, der: (D / full) * S.spikeKneeSlope },
+    { loc: full, val: D, der: S.spikeTip }
+  ]);
+}
+
 /* underside(): a bowl that only ever deepens. Off mirrors the deck — the old dome on a dome. */
 function bowlSpline() {
   if (!S.bowlOn) return deckSpline();
+  if (S.spikeOn) return spikeSpline();
   var pts = [
     { loc: -1.0, val: -1.4, der: 0 },
     { loc: -0.08, val: -0.25, der: 1.6 },
@@ -865,7 +894,9 @@ function islandStrength(x, z) {
 
 var BOWL_SP = null, bowlSpKey = "";
 function bowlCached() {
-  var key = [S.bowlOn, S.bowl, S.ridgeOn, S.bandInner, S.bandOuter, S.deckLow, S.deckHigh, S.deckOuter,
+  var key = [S.bowlOn, S.bowl, S.spikeOn, S.spikeDepth, S.spikeAt, S.spikeRim, S.spikeKneeAt,
+             S.spikeKneeDepth, S.spikeKneeSlope, S.spikeTip,
+             S.ridgeOn, S.bandInner, S.bandOuter, S.deckLow, S.deckHigh, S.deckOuter,
              S.shoreAt, S.deckAt].join("|");
   if (key !== bowlSpKey) { bowlSpKey = key; BOWL_SP = bowlSpline(); }
   return BOWL_SP;
@@ -1434,6 +1465,8 @@ function buildGrid(fast) {
   var key = [noiseKey, S.originX, S.originZ, S.threshold, S.hScale, S.reach, S.bandBottom, S.bandTop,
              L, S.ridgeOn, S.bowlOn, S.shoreAt, S.deckAt, S.bandInner, S.bandOuter,
              S.deckLow, S.deckHigh, S.deckOuter, S.bowl,
+             S.spikeOn, S.spikeDepth, S.spikeAt, S.spikeRim, S.spikeKneeAt, S.spikeKneeDepth,
+             S.spikeKneeSlope, S.spikeTip,
              S.detailOn, S.detailStrength, S.t3On, S.t3Strength, S.t3Squash,
              S.cavesOn, S.caveBand, S.caveDepth, S.skinFade, march,
              S.streamsOn, S.streamCell, S.streamChance, S.streamLength, S.streamMinRun,
@@ -1815,10 +1848,13 @@ var GROUPS = [
   },
   {
     num: "04", title: "Underside", open: false,
-    blurb: "A bowl that only ever deepens towards the middle. It takes no notice of ridge — that asymmetry is what keeps islands from reading as spheres.",
+    blurb: "What hangs below a deck. The bowl only ever eases off — steepest at the rim, flattest in the middle — which is a hemisphere and reads as one. The pointed profile flares out under the rim instead, steepens through a knee, and runs on down to a tip. Neither takes any notice of ridge; that asymmetry with the deck is what keeps islands from reading as spheres.",
     items: [
-      { type: "toggle", k: "bowlOn", label: "Bowl underside",
+      { type: "toggle", k: "bowlOn", label: "Shaped underside",
         note: "Off mirrors the deck underneath, which is the dome-on-a-dome shape this replaced." },
+      { type: "toggle", k: "spikeOn", label: "Pointed, not bowled",
+        note: "Off falls back to the six-point bowl further down, so the two can be compared without losing either." },
+      { type: "spike" },
       { type: "bowl" }
     ]
   },
@@ -1906,6 +1942,66 @@ function el(tag, cls, txt) {
   if (cls) e.className = cls;
   if (txt != null) e.textContent = txt;
   return e;
+}
+
+/* A plot of the underside itself, because an S is a thing you recognise by looking at it and cannot read
+   off seven numbers. Mask runs left to right, depth downward, so the line is the rock's own silhouette
+   from the rim inwards. The bowl is drawn behind it for comparison, and the clamp at two reaches is drawn
+   because past that layerValue cuts the tip flat however deep this says to go. */
+function drawUndersideCurve(cv) {
+  var g = cv.getContext("2d");
+  var w = cv.width, h = cv.height;
+  var cs = getComputedStyle(document.body);
+  var pick = function (name, fallback) {
+    var v = cs.getPropertyValue(name);
+    return v && v.trim() ? v.trim() : fallback;
+  };
+  var ink = pick("--ink", "#171B1F");
+  var dim = pick("--ink-dim", "#6B747E");
+  var rule = pick("--rule-soft", "#D8DDE2");
+  var accent = pick("--accent", "#A93368");
+
+  var maskMax = 0.45, depthMax = 2.15;
+  var padL = 8, padR = 8, padT = 10, padB = 20;
+  var px = function (m) { return padL + (w - padL - padR) * (m / maskMax); };
+  var py = function (d) { return padT + (h - padT - padB) * (d / depthMax); };
+
+  g.clearRect(0, 0, w, h);
+
+  /* The clamp, and the mask half of all island ground sits below. Both are facts about the model rather
+     than about these sliders, so they stay put while the line moves. */
+  g.strokeStyle = rule; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(px(0), py(2)); g.lineTo(px(maskMax), py(2)); g.stroke();
+  g.setLineDash([3, 3]);
+  g.beginPath(); g.moveTo(px(0.13), py(0)); g.lineTo(px(0.13), py(depthMax)); g.stroke();
+  g.setLineDash([]);
+  g.fillStyle = dim; g.font = "11px ui-monospace, monospace";
+  g.fillText("clamp 2.0", px(maskMax) - 58, py(2) - 4);
+  g.fillText("median ground", px(0.13) + 4, h - 6);
+  g.fillText("rim", px(0) + 2, h - 6);
+
+  /* Rim and deck line. */
+  g.strokeStyle = ink; g.globalAlpha = 0.55; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(px(0), py(0)); g.lineTo(px(maskMax), py(0)); g.stroke();
+  g.globalAlpha = 1;
+
+  var was = S.spikeOn, m, first;
+  var line = function (colour, width, alpha) {
+    g.strokeStyle = colour; g.lineWidth = width; g.globalAlpha = alpha;
+    var sp = bowlSpline();
+    g.beginPath();
+    for (first = true, m = 0; m <= maskMax + 1e-9; m += 0.002) {
+      var d = evalSpline(sp, { mask: m, ridge: 0 });
+      var y = py(Math.max(-0.05, Math.min(depthMax, d)));
+      if (first) { g.moveTo(px(m), y); first = false; } else { g.lineTo(px(m), y); }
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+  };
+
+  S.spikeOn = false; line(dim, 1.5, 0.55);
+  S.spikeOn = true;  line(accent, 2.5, 1);
+  S.spikeOn = was;
 }
 
 function slider(label, get, set, min, max, step, dp, note, cam) {
@@ -2012,6 +2108,41 @@ function build() {
         return;
       }
 
+      if (it.type === "spike") {
+        var srow = el("div", "row");
+        srow.appendChild(el("div", "rowlabel", "Pointed profile"));
+        var cv = document.createElement("canvas");
+        cv.className = "curve";
+        cv.width = 560; cv.height = 220;
+        srow.appendChild(cv);
+        var redraw = function () { drawUndersideCurve(cv); };
+        var defs = [
+          ["spikeDepth", "tip depth", 0.2, 2.0, 0.01, 2,
+           "In layer reaches, so 1.55 against a thickness of 42 is 65 blocks of rock hanging below the deck."],
+          ["spikeAt", "tip at mask", 0.05, 0.45, 0.005, 3,
+           "Past this the spline runs on along the tip slope rather than stopping, which is what keeps the biggest islands pointed instead of plugged."],
+          ["spikeRim", "slope at rim", 0, 6, 0.05, 2,
+           "Low leaves the underside near flat where it meets the shore. That flare is the top half of the S."],
+          ["spikeKneeAt", "knee at", 0.05, 0.95, 0.01, 2,
+           "Where the curve turns over, as a fraction of the tip mask."],
+          ["spikeKneeDepth", "depth at knee", 0.02, 0.95, 0.01, 2, null],
+          ["spikeKneeSlope", "slope at knee", 0.2, 5, 0.05, 2,
+           "As a multiple of the average slope. Above 1 the knee is the steepest point and the profile reads as an S; at 1 it is close to a straight cone."],
+          ["spikeTip", "slope at tip", 0, 6, 0.05, 2,
+           "Zero rounds the tip off into a blunt nose. High keeps it plunging, so it comes to a point."]
+        ];
+        defs.forEach(function (d) {
+          srow.appendChild(slider(d[1],
+            (function (k) { return function () { return S[k]; }; })(d[0]),
+            (function (k) { return function (v) { S[k] = v; redraw(); }; })(d[0]),
+            d[2], d[3], d[4], d[5], d[6]));
+        });
+        refreshers.push(redraw);
+        redraw();
+        body.appendChild(srow);
+        return;
+      }
+
       if (it.type === "bowl") {
         var f = fold("Bowl profile — " + S.bowl.length + " points");
         S.bowl.forEach(function (_, i) {
@@ -2065,7 +2196,29 @@ function writeOut() {
       high: S.deckHigh.map(function (v) { return round(v, 4); }),
       outer: S.deckOuter.map(function (v) { return round(v, 4); })
     },
-    underside: { enabled: S.bowlOn, points: S.bowl.map(function (p) { return [round(p[0], 4), round(p[1], 5)]; }) },
+    underside: {
+      enabled: S.bowlOn,
+      shape: S.spikeOn ? "pointed" : "bowl",
+      bowlPoints: S.bowl.map(function (p) { return [round(p[0], 4), round(p[1], 5)]; }),
+      pointed: {
+        tipDepth: round(S.spikeDepth, 4), tipAtMask: round(S.spikeAt, 4),
+        slopeAtRim: round(S.spikeRim, 3), kneeAt: round(S.spikeKneeAt, 3),
+        depthAtKnee: round(S.spikeKneeDepth, 3), slopeAtKnee: round(S.spikeKneeSlope, 3),
+        slopeAtTip: round(S.spikeTip, 3)
+      },
+      // The same curve as addPoint calls, ready to paste into SkyIslandDensity.underside().
+      javaSpline: (function () {
+        var full = Math.max(0.02, S.spikeAt), D = S.spikeDepth;
+        var knee = clamp(full * S.spikeKneeAt, 0.005, full - 0.005);
+        return [
+          [-1.0, -1.4, 0],
+          [-0.08, -0.25, 1.6],
+          [0.0, 0.0, round(S.spikeRim, 4)],
+          [round(knee, 4), round(D * S.spikeKneeDepth, 5), round((D / full) * S.spikeKneeSlope, 4)],
+          [round(full, 4), round(D, 5), round(S.spikeTip, 4)]
+        ];
+      })()
+    },
     detail: { enabled: S.detailOn, strength: round(S.detailStrength, 4), firstOctave: S.detailOct, amplitudes: S.detailAmp },
     streams: { enabled: S.streamsOn, chance: S.streamChance, cell: S.streamCell,
                longestRun: S.streamLength, shortestRun: S.streamMinRun,
